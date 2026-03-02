@@ -282,12 +282,9 @@ def download_metadata(request, file_id):
     """
     Returns chunk IDs and storage node URLs for a given file.
     """
-    user = request.user
-    if not user or not user.is_authenticated:
-        return Response({"error": "Authentication required"}, status=401)
 
     try:
-        file_obj = File.objects.get(pk=file_id, owner=user)
+        file_obj = File.objects.get(pk=file_id, owner=request.user)
     except File.DoesNotExist:
         return Response({"error": "File not found"}, status=404)
 
@@ -295,7 +292,7 @@ def download_metadata(request, file_id):
     response_chunks = [
         {
             "chunk_id": chunk.chunk_id,
-            "download_url": f"{chunk.storage_node}/download/{chunk.chunk_id}/"
+            "download_url": f"http://localhost:8000/download/chunk/{chunk.chunk_id}/"
         }
         for chunk in chunks
     ]
@@ -305,5 +302,23 @@ def download_metadata(request, file_id):
         "filename": file_obj.filename,
         "size": file_obj.size,
         "chunks": response_chunks
+    })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_chunk(request, chunk_id):
+    try:
+        chunk = Chunk.objects.select_related("file").get(chunk_id=chunk_id)
+    except Chunk.DoesNotExist:
+        return Response({"error": "Chunk not found"}, status=404)
+
+    # Ensure user owns the file
+    if chunk.file.owner != request.user:
+        return Response({"error": "Forbidden"}, status=403)
+
+    return Response({
+        "chunk_id": str(chunk.chunk_id),
+        "storage_node": chunk.storage_node,
+        "order": chunk.order
     })
 #jp changes
