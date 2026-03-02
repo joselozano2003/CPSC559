@@ -233,9 +233,7 @@ class UserViewSet(viewsets.ModelViewSet):
         })
 
 #jp changes
-STORAGE_NODES = [
-    "not sure here"
-]
+STORAGE_NODES = ["http://localhost:8000"] #not sure here
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
