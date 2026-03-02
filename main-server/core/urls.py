@@ -20,6 +20,11 @@ urlpatterns = [
     path('auth/register/', views.register, name='register'),
     path('auth/login/', views.login, name='login'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    #jp changes
+    path('upload/', views.upload_metadata, name='upload_metadata'),
+    path('download/<int:file_id>/', views.download_metadata, name='download_metadata'),
+    #jp changes
     
     # API endpoints
     path('api/', include(router.urls)),

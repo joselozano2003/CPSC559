@@ -232,4 +232,76 @@ class UserViewSet(viewsets.ModelViewSet):
             'expires_in': 3600  # 1 hour
         })
 
+#jp changes
+STORAGE_NODES = [
+    "not sure here"
+]
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upload_metadata(request):
+    """
+    Client sends file metadata, server returns upload URLs per chunk.
+    """
+    filename = request.data.get("filename")
+    size = request.data.get("size")
+    num_chunks = request.data.get("num_chunks")
+
+    if not filename or not num_chunks:
+        return Response({"error": "filename and num_chunks required"}, status=400)
+
+    file_obj = File.objects.create(
+        owner=request.user,
+        filename=filename,
+        size=size
+    )
+
+    chunks_data = []
+    for i in range(int(num_chunks)):
+        chunk_id = str(uuid.uuid4())
+        storage_node = STORAGE_NODES[i % len(STORAGE_NODES)]
+
+        Chunk.objects.create(
+            file=file_obj,
+            chunk_id=chunk_id,
+            storage_node=storage_node,
+            order=i
+        )
+
+        chunks_data.append({
+            "chunk_id": chunk_id,
+            "upload_url": f"{storage_node}/upload/{chunk_id}/"
+        })
+
+    return Response({
+        "file_id": file_obj.id,
+        "chunks": chunks_data
+    })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_metadata(request, file_id):
+    """
+    Returns chunk IDs and storage node URLs for a given file.
+    """
+    try:
+        file_obj = File.objects.get(id=file_id, owner=request.user)
+    except File.DoesNotExist:
+        return Response({"error": "File not found"}, status=404)
+
+    chunks = file_obj.chunks.order_by("order")
+    response_chunks = [
+        {
+            "chunk_id": chunk.chunk_id,
+            "download_url": f"{chunk.storage_node}/download/{chunk.chunk_id}/"
+        }
+        for chunk in chunks
+    ]
+
+    return Response({
+        "file_id": file_obj.id,
+        "filename": file_obj.filename,
+        "size": file_obj.size,
+        "chunks": response_chunks
+    })
+#jp changes
