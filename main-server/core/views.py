@@ -274,7 +274,7 @@ def upload_metadata(request):
         })
 
     return Response({
-        "file_id": file_obj.id,
+        "file_id": file_obj.pk,
         "chunks": chunks_data
     })
 
@@ -284,8 +284,12 @@ def download_metadata(request, file_id):
     """
     Returns chunk IDs and storage node URLs for a given file.
     """
+    user = request.user
+    if not user or not user.is_authenticated:
+        return Response({"error": "Authentication required"}, status=401)
+
     try:
-        file_obj = File.objects.get(id=file_id, owner=request.user)
+        file_obj = File.objects.get(pk=file_id, owner=user)
     except File.DoesNotExist:
         return Response({"error": "File not found"}, status=404)
 
@@ -299,7 +303,7 @@ def download_metadata(request, file_id):
     ]
 
     return Response({
-        "file_id": file_obj.id,
+        "file_id": file_obj.pk,
         "filename": file_obj.filename,
         "size": file_obj.size,
         "chunks": response_chunks
