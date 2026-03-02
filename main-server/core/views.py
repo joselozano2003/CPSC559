@@ -292,7 +292,14 @@ def download_metadata(request, file_id):
     response_chunks = [
         {
             "chunk_id": chunk.chunk_id,
-            "download_url": f"http://localhost:8000/download/chunk/{chunk.chunk_id}/"
+            #"download_url": f"{chunk.storage_node}/download/chunk/{chunk.chunk_id}/"
+            
+            "download_url": f"http://localhost:8000/download/chunk/{chunk.chunk_id}/" #testing
+            '''
+            curl -X POST http://localhost:8000/upload/ \ -H "Authorization: Bearer <ACCESS_TOKEN>" \ -H "Content-Type: application/json" \ -d '{"filename":"myfile.txt","size":12345,"num_chunks":3}'
+            
+            curl -X GET http://localhost:8000/download/<FILE_ID>/ \ -H "Authorization: Bearer <ACCESS_TOKEN>"
+            '''
         }
         for chunk in chunks
     ]
