@@ -5,14 +5,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import models
+from django.views.decorators.csrf import csrf_exempt
 from .models import *
 from .serializers import *
 from .s3_utils import S3ImageUploader
 from django.http import JsonResponse
 from django.db import connection
 from django.utils import timezone
+from django.conf import settings
 import uuid
-
+import os
 
 class IsOwnerOrReadOnly(BasePermission):
     """
@@ -239,7 +241,7 @@ STORAGE_NODES = ["http://localhost:8000"] #not sure here
 @permission_classes([IsAuthenticated])
 def upload_metadata(request):
     """
-    Client sends file metadata, server returns upload URLs per chunk.
+    client sends file metadata, server returns upload url per chunk
     """
     filename = request.data.get("filename")
     size = request.data.get("size")
@@ -265,16 +267,24 @@ def upload_metadata(request):
             storage_node=storage_node,
             order=i
         )
+        chunks_data.append({"chunk_id": chunk_id, "upload_url": f"{storage_node}/upload/{chunk_id}/"})
+    return Response({"file_id": file_obj.pk, "chunks": chunks_data})
 
-        chunks_data.append({
-            "chunk_id": chunk_id,
-            "upload_url": f"{storage_node}/upload/{chunk_id}/"
-        })
+CHUNK_STORAGE_DIR = os.path.join(settings.BASE_DIR, "chunks")
+@csrf_exempt
+def upload_chunk(request, chunk_id):
+    if not request.body:
+        return JsonResponse({"error: no chunk uploaded"}, status=400)
 
-    return Response({
-        "file_id": file_obj.pk,
-        "chunks": chunks_data
-    })
+    os.makedirs(CHUNK_STORAGE_DIR, exist_ok=True)
+    file_path = os.path.join(CHUNK_STORAGE_DIR, f"{chunk_id}.chunk")
+
+    try:
+        with open(file_path, "wb") as f:
+            f.write(request.body)
+        return JsonResponse({"message": "chunk upload successful", "chunk_id": chunk_id,})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -282,7 +292,6 @@ def download_metadata(request, file_id):
     """
     Returns chunk IDs and storage node URLs for a given file.
     """
-
     try:
         file_obj = File.objects.get(pk=file_id, owner=request.user)
     except File.DoesNotExist:
@@ -303,13 +312,7 @@ def download_metadata(request, file_id):
         }
         for chunk in chunks
     ]
-
-    return Response({
-        "file_id": file_obj.pk,
-        "filename": file_obj.filename,
-        "size": file_obj.size,
-        "chunks": response_chunks
-    })
+    return Response({"file_id": file_obj.pk, "filename": file_obj.filename, "size": file_obj.size, "chunks": response_chunks})
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -319,13 +322,7 @@ def download_chunk(request, chunk_id):
     except Chunk.DoesNotExist:
         return Response({"error": "Chunk not found"}, status=404)
 
-    # Ensure user owns the file
     if chunk.file.owner != request.user:
         return Response({"error": "Forbidden"}, status=403)
-
-    return Response({
-        "chunk_id": str(chunk.chunk_id),
-        "storage_node": chunk.storage_node,
-        "order": chunk.order
-    })
+    return Response({"chunk_id": str(chunk.chunk_id), "storage_node": chunk.storage_node, "order": chunk.order})
 #jp changes

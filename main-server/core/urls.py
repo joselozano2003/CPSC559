@@ -26,6 +26,7 @@ urlpatterns = [
     #jp changes
     path('upload/', views.upload_metadata, name='upload_metadata'),
     path('download/<int:file_id>/', views.download_metadata, name='download_metadata'),
+    path("upload/<str:chunk_id>/", views.upload_chunk, name="upload_chunk"),
     path('download/chunk/<uuid:chunk_id>/', views.download_chunk, name='download_chunk'),
     #jp changes
     
