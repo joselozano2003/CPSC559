@@ -2,3 +2,4 @@
 __pychache__/
 .venv/
 .vscode
+.DS_Store
