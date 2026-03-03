@@ -2,6 +2,7 @@ from django.urls import path, include
 from django.http import HttpResponse
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.views import TokenVerifyView
 from . import views
 
 def home(request):
@@ -15,6 +16,7 @@ router.register(r'users', views.UserViewSet)
 urlpatterns = [
     path('', home, name='home'),
     path('health/', views.health_check, name='health_check'),
+    path('api/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
     
     # Authentication endpoints
     path('auth/register/', views.register, name='register'),
@@ -23,4 +25,5 @@ urlpatterns = [
     
     # API endpoints
     path('api/', include(router.urls)),
+    
 ]
