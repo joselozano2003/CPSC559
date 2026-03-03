@@ -43,6 +43,11 @@ services:
       - POSTGRES_DB=flask_db
     ports:
       - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - cps559_network
 
@@ -53,7 +58,7 @@ services:
     ports:
       - "6000:6000"
     environment:
-      - DATABASE_URL=postgresql://hello_flask:hello_password@db:5433/flask_db
+      - DATABASE_URL=postgresql://hello_flask:hello_password@db:5432/flask_db
       - FLASK_DEBUG=1
       - MAIN_SERVER_URL=http://main-server:8000
       - BUCKET_ACCESS_KEY_ID=minioadmin
@@ -70,6 +75,7 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:
 
 networks:
   cps559_network:

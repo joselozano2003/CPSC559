@@ -1,6 +1,5 @@
 import boto3
 import os
-from django.conf import settings
 from botocore.exceptions import ClientError
 import uuid
 
@@ -8,20 +7,20 @@ import uuid
 class BucketClient:
     def __init__(self):
         # Check if we're using MinIO (local development)
-        endpoint_url = os.getenv('AWS_S3_ENDPOINT_URL')
+        endpoint_url = os.getenv('BUCKET_ENDPOINT_URL')
         if endpoint_url:
             self.s3_client = boto3.client(
                 's3',
                 endpoint_url=endpoint_url,
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                aws_access_key_id=os.getenv('BUCKET_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('BUCKET_SECRET_ACCESS_KEY'),
                 region_name=os.getenv('AWS_REGION', 'us-east-1')
             )
         else:
             # Production BUCKET
             self.s3_client = boto3.client('s3')
         
-        self.bucket_name = os.getenv('S3_BUCKET_NAME')
+        self.bucket_name = os.getenv('BUCKET_NAME')
         self.region = os.getenv('AWS_REGION', 'us-east-1')
         self.endpoint_url = endpoint_url
     
