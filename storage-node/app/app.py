@@ -1,25 +1,23 @@
 import os
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from dotenv import load_dotenv
+from .extensions import db
 from .routes import bp
 
-load_dotenv()
+def create_app():
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-app = Flask(__name__)
+    db.init_app(app)
 
-# Use the environment variable we set in docker-compose
-app.register_blueprint(bp)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
-db = SQLAlchemy(app)
-
-
-@app.route('/health')
-def index():
-    return "Connected to PostgreSQL!"
-    
-
-if __name__ == "__main__":
     with app.app_context():
-        db.create_all() # This creates the tables automatically
-    app.run(host="0.0.0.0", port=5000)
+        from .models import Chunk
+        db.create_all()
+
+    app.register_blueprint(bp)
+
+    @app.route('/health')
+    def health():
+        return "Connected to PostgreSQL!"
+
+    return app

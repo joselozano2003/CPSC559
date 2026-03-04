@@ -33,7 +33,7 @@ services:
       echo 'MinIO configuration complete';
       exit 0;
       "
-  db:
+  db2:
     image: postgres:15
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -44,7 +44,7 @@ services:
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U hello_flask"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -58,7 +58,7 @@ services:
     ports:
       - "6000:6000"
     environment:
-      - DATABASE_URL=postgresql://hello_flask:hello_password@db:5432/flask_db
+      - DATABASE_URL=postgresql://hello_flask:hello_password@db2:5432/flask_db
       - FLASK_DEBUG=1
       - MAIN_SERVER_URL=http://main-server:8000
       - BUCKET_ACCESS_KEY_ID=minioadmin
@@ -68,7 +68,7 @@ services:
     networks:
       - cps559_network
     depends_on:
-      db:
+      db2:
         condition: service_healthy
       createbuckets:
         condition: service_completed_successfully
