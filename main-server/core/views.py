@@ -5,14 +5,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import models
+from django.views.decorators.csrf import csrf_exempt
 from .models import *
 from .serializers import *
 from .s3_utils import S3ImageUploader
 from django.http import JsonResponse
 from django.db import connection
 from django.utils import timezone
+from django.conf import settings
 import uuid
-
+import os
 
 class IsOwnerOrReadOnly(BasePermission):
     """
@@ -232,4 +234,95 @@ class UserViewSet(viewsets.ModelViewSet):
             'expires_in': 3600  # 1 hour
         })
 
+#jp changes
+STORAGE_NODES = ["http://localhost:8000"] #not sure here
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upload_metadata(request):
+    """
+    client sends file metadata, server returns upload url per chunk
+    """
+    filename = request.data.get("filename")
+    size = request.data.get("size")
+    num_chunks = request.data.get("num_chunks")
+
+    if not filename or not num_chunks:
+        return Response({"error": "filename and num_chunks required"}, status=400)
+
+    file_obj = File.objects.create(
+        owner=request.user,
+        filename=filename,
+        size=size
+    )
+
+    chunks_data = []
+    for i in range(int(num_chunks)):
+        chunk_id = str(uuid.uuid4())
+        storage_node = STORAGE_NODES[i % len(STORAGE_NODES)]
+
+        Chunk.objects.create(
+            file=file_obj,
+            chunk_id=chunk_id,
+            storage_node=storage_node,
+            order=i
+        )
+        chunks_data.append({"chunk_id": chunk_id, "upload_url": f"{storage_node}/upload/{chunk_id}/"})
+    return Response({"file_id": file_obj.pk, "chunks": chunks_data})
+
+CHUNK_STORAGE_DIR = os.path.join(settings.BASE_DIR, "chunks")
+@csrf_exempt
+def upload_chunk(request, chunk_id):
+    if not request.body:
+        return JsonResponse({"error: no chunk uploaded"}, status=400)
+
+    os.makedirs(CHUNK_STORAGE_DIR, exist_ok=True)
+    file_path = os.path.join(CHUNK_STORAGE_DIR, f"{chunk_id}.chunk")
+
+    try:
+        with open(file_path, "wb") as f:
+            f.write(request.body)
+        return JsonResponse({"message": "chunk upload successful", "chunk_id": chunk_id,})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_metadata(request, file_id):
+    """
+    Returns chunk IDs and storage node URLs for a given file.
+    """
+    try:
+        file_obj = File.objects.get(pk=file_id, owner=request.user)
+    except File.DoesNotExist:
+        return Response({"error": "File not found"}, status=404)
+
+    chunks = file_obj.chunks.order_by("order")
+    response_chunks = [
+        {
+            "chunk_id": chunk.chunk_id,
+            #"download_url": f"{chunk.storage_node}/download/chunk/{chunk.chunk_id}/"
+            
+            "download_url": f"http://localhost:8000/download/chunk/{chunk.chunk_id}/" #testing
+            '''
+            curl -X POST http://localhost:8000/upload/ \ -H "Authorization: Bearer <ACCESS_TOKEN>" \ -H "Content-Type: application/json" \ -d '{"filename":"myfile.txt","size":12345,"num_chunks":3}'
+            
+            curl -X GET http://localhost:8000/download/<FILE_ID>/ \ -H "Authorization: Bearer <ACCESS_TOKEN>"
+            '''
+        }
+        for chunk in chunks
+    ]
+    return Response({"file_id": file_obj.pk, "filename": file_obj.filename, "size": file_obj.size, "chunks": response_chunks})
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_chunk(request, chunk_id):
+    try:
+        chunk = Chunk.objects.select_related("file").get(chunk_id=chunk_id)
+    except Chunk.DoesNotExist:
+        return Response({"error": "Chunk not found"}, status=404)
+
+    if chunk.file.owner != request.user:
+        return Response({"error": "Forbidden"}, status=403)
+    return Response({"chunk_id": str(chunk.chunk_id), "storage_node": chunk.storage_node, "order": chunk.order})
+#jp changes

@@ -47,4 +47,17 @@ class User(models.Model):
     def __str__(self):
         return getModelFields(self)
 
+#jp changes
+class File(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    filename = models.CharField(max_length=255)
+    size = models.BigIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
 
+class Chunk(models.Model):
+    file = models.ForeignKey(File, on_delete=models.CASCADE, related_name="chunks")
+    chunk_id = models.CharField(max_length=255, unique=True)
+    storage_node = models.CharField(max_length=255)
+    order = models.IntegerField()
+    uploaded_at = models.DateTimeField(null=True, blank=True)
+#jp changes
