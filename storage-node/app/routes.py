@@ -26,17 +26,17 @@ def put_chunk():
         return jsonify({"error": "Chunk already exists"}), 409
 
     bucket_client = BucketClient()
-    file_key = bucket_client.generate_unique_filename(chunk_id)
-    presigned_url = bucket_client.generate_presigned_url(file_key)
+    object_key = bucket_client.generate_object_key(chunk_id)
+    presigned_url = bucket_client.generate_presigned_url(object_key)
 
     if not presigned_url:
         return jsonify({"error": "Failed to generate upload URL"}), 500
 
-    public_url = bucket_client.get_public_url(file_key)
+    public_url = bucket_client.get_public_url(object_key)
 
     chunk = Chunk(
         chunk_id=chunk_id,
-        minio_object_key=file_key,
+        minio_object_key=object_key,
         file_id=file_id,
         confirmed=False,
     )

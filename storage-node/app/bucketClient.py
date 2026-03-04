@@ -1,7 +1,6 @@
 import boto3
 import os
 from botocore.exceptions import ClientError
-import uuid
 
 
 class BucketClient:
@@ -55,20 +54,15 @@ class BucketClient:
             print(f"Error generating presigned URL: {e}")
             return None
     
-    def generate_unique_filename(self, original_filename: str) -> str:
+    def generate_object_key(self, chunk_id: str) -> str:
         """
-        Generate a unique filename for Bucket storage
-        
+        Generate a storage key for a chunk.
         Args:
-            original_filename: Original file name
-            user_id: User ID for organizing files
-        
+            chunk_id: The unique chunk identifier
         Returns:
-            Unique Bucket key
+            MinIO object key
         """
-        file_extension = original_filename.split('.')[-1] if '.' in original_filename else 'txt'
-        unique_id = str(uuid.uuid4())[:8]
-        return f"{unique_id}.{file_extension}"
+        return f"chunks/{chunk_id}"
     
     def get_public_url(self, file_key: str) -> str:
         """
