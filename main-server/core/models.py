@@ -1,4 +1,5 @@
 from django.db import models
+import uuid
 from django.contrib.auth.hashers import make_password, check_password
 from .utils import getModelFields
 
@@ -49,15 +50,38 @@ class User(models.Model):
 
 #jp changes
 class File(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
     filename = models.CharField(max_length=255)
     size = models.BigIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"{self.filename} ({self.owner.email})"
+
 class Chunk(models.Model):
     file = models.ForeignKey(File, on_delete=models.CASCADE, related_name="chunks")
     chunk_id = models.CharField(max_length=255, unique=True)
-    storage_node = models.CharField(max_length=255)
+    size = models.IntegerField(null=True, blank=True)
+    storage_node = models.ForeignKey('StorageNode', on_delete=models.SET_NULL, null=True, related_name='chunks')
     order = models.IntegerField()
     uploaded_at = models.DateTimeField(null=True, blank=True)
-#jp changes
+
+    class Meta:
+        ordering = ['order']
+        unique_together = ('file', 'order')
+
+    def __str__(self):
+        return f"Chunk {self.order} of {self.file.filename}"
+    
+class StorageNode(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=128)
+    address = models.CharField(max_length=256)
+    is_active = models.BooleanField(default=True)
+    last_heartbeat = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+    

@@ -27,7 +27,7 @@ def put_chunk():
 
     bucket_client = BucketClient()
     object_key = bucket_client.generate_object_key(chunk_id)
-    presigned_url = bucket_client.generate_presigned_url(object_key)
+    presigned_url = bucket_client.generate_presigned_upload_url(object_key)
 
     if not presigned_url:
         return jsonify({"error": "Failed to generate upload URL"}), 500
@@ -50,6 +50,24 @@ def put_chunk():
         "success": True,
     }), 201
 
+@bp.route("/chunk/<chunk_id>", methods=["GET"])
+@require_jwt
+def get_chunk(chunk_id):
+    chunk = Chunk.query.filter_by(chunk_id=chunk_id).first()
+    if not chunk:
+        return jsonify({"error": "Chunk not found"}), 404
+
+    bucket_client = BucketClient()
+    presigned_url = bucket_client.generate_presigned_download_url(chunk.minio_object_key)
+
+    if not presigned_url:
+        return jsonify({"error": "Failed to generate download URL"}), 500
+
+    return jsonify({
+        "chunk_id": chunk_id,
+        "presigned_url": presigned_url,
+        "success": True
+    }), 200
 
 @bp.route("/chunk/<chunk_id>/confirm", methods=["PATCH"])
 @require_jwt

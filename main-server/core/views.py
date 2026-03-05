@@ -1,10 +1,15 @@
+import uuid
+import os
+import requests
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.db import models
+from rest_framework.views import APIView
+from django.db import transaction
+
 from django.views.decorators.csrf import csrf_exempt
 from .models import *
 from .serializers import *
@@ -13,9 +18,10 @@ from django.http import JsonResponse
 from django.db import connection
 from django.utils import timezone
 from django.conf import settings
-import uuid
-import os
-
+from rest_framework.views import APIView
+from django.db import transaction
+from .models import File, Chunk, StorageNode
+from .serializers import FileUploadRequestSerializer, FileUploadResponseSerializer
 class IsOwnerOrReadOnly(BasePermission):
     """
     Custom permission to only allow users to edit their own profile.
@@ -169,122 +175,6 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data)
     
-    @action(detail=False, methods=['get'])
-    def friends(self, request):
-        """
-        Get current user's list of friends (accepted friend requests)
-        """
-        friends = request.user.friends()
-        serializer = UserProfileSerializer(friends, many=True)
-        return Response({
-            'friends': serializer.data,
-            'count': friends.count()
-        })
-    
-    # --- NEW ACTION FOR SYNCING POINTS ---
-    @action(detail=False, methods=['post'])
-    def update_points(self, request):
-        """
-        Manually update the current user's points from the frontend
-        """
-        points = request.data.get('points')
-        
-        if points is None:
-            return Response({
-                'error': 'points value is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-            
-        # Update the user's points
-        user = request.user
-        user.points = int(points)
-        user.save()
-        
-        return Response({
-            'message': 'Points updated successfully',
-            'total_points': user.points
-        }, status=status.HTTP_200_OK)
-    # -------------------------------------
-
-    @action(detail=False, methods=['post'])
-    def generate_upload_url(self, request):
-        """
-        Generate a presigned URL for uploading images to S3
-        """
-        filename = request.data.get('filename')
-        if not filename:
-            return Response({
-                'error': 'filename is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        s3_uploader = S3ImageUploader()
-        file_key = s3_uploader.generate_unique_filename(filename, request.user.user_id)
-        presigned_url = s3_uploader.generate_presigned_url(file_key)
-        
-        if not presigned_url:
-            return Response({
-                'error': 'Failed to generate upload URL'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        public_url = s3_uploader.get_public_url(file_key)
-        
-        return Response({
-            'upload_url': presigned_url,
-            'public_url': public_url,
-            'file_key': file_key,
-            'expires_in': 3600  # 1 hour
-        })
-
-#jp changes
-STORAGE_NODES = ["http://localhost:8000"] #not sure here
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def upload_metadata(request):
-    """
-    client sends file metadata, server returns upload url per chunk
-    """
-    filename = request.data.get("filename")
-    size = request.data.get("size")
-    num_chunks = request.data.get("num_chunks")
-
-    if not filename or not num_chunks:
-        return Response({"error": "filename and num_chunks required"}, status=400)
-
-    file_obj = File.objects.create(
-        owner=request.user,
-        filename=filename,
-        size=size
-    )
-
-    chunks_data = []
-    for i in range(int(num_chunks)):
-        chunk_id = str(uuid.uuid4())
-        storage_node = STORAGE_NODES[i % len(STORAGE_NODES)]
-
-        Chunk.objects.create(
-            file=file_obj,
-            chunk_id=chunk_id,
-            storage_node=storage_node,
-            order=i
-        )
-        chunks_data.append({"chunk_id": chunk_id, "upload_url": f"{storage_node}/upload/{chunk_id}/"})
-    return Response({"file_id": file_obj.pk, "chunks": chunks_data})
-
-CHUNK_STORAGE_DIR = os.path.join(settings.BASE_DIR, "chunks")
-@csrf_exempt
-def upload_chunk(request, chunk_id):
-    if not request.body:
-        return JsonResponse({"error: no chunk uploaded"}, status=400)
-
-    os.makedirs(CHUNK_STORAGE_DIR, exist_ok=True)
-    file_path = os.path.join(CHUNK_STORAGE_DIR, f"{chunk_id}.chunk")
-
-    try:
-        with open(file_path, "wb") as f:
-            f.write(request.body)
-        return JsonResponse({"message": "chunk upload successful", "chunk_id": chunk_id,})
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -325,4 +215,151 @@ def download_chunk(request, chunk_id):
     if chunk.file.owner != request.user:
         return Response({"error": "Forbidden"}, status=403)
     return Response({"chunk_id": str(chunk.chunk_id), "storage_node": chunk.storage_node, "order": chunk.order})
-#jp changes
+
+
+class FileUploadView(APIView):
+
+    def post(self, request):
+        serializer = FileUploadRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+        user = request.user
+
+        # Grab the single active storage node
+        storage_node = StorageNode.objects.filter(is_active=True).first()
+        if not storage_node:
+            return Response(
+                {"error": "No active storage node available."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        chunk_responses = []
+
+        try:
+            with transaction.atomic():
+                # Create the File record
+                file_record = File.objects.create(
+                    owner=user,
+                    filename=data['filename'],
+                    size=data['size'],
+                )
+
+                # For now we now use only 1 chunk as we only have 1 storage node, but this loop can be extended to support multiple nodes and chunk distribution
+                for chunk_data in sorted(data['chunks'], key=lambda c: c['order']):
+                    real_chunk_id = str(uuid.uuid4())
+
+                    # Call storage node to get presigned upload URL
+                    try:
+                        node_response = requests.put(
+                            f"{storage_node.address}/chunk",
+                            json={
+                                "chunk_id": str(real_chunk_id),
+                                "file_id": str(file_record.id),
+                            },
+                            headers={
+                                "Authorization": request.headers.get("Authorization")
+                            },
+                            timeout=10,
+                        )
+                        node_response.raise_for_status()
+                    except requests.exceptions.RequestException as e:
+                        raise Exception(f"Storage node unreachable: {str(e)}")
+
+                    node_data = node_response.json()
+
+                    # Save chunk record in master DB
+                    Chunk.objects.create(
+                        file=file_record,
+                        chunk_id=real_chunk_id,
+                        order=chunk_data['order'],
+                        size=chunk_data['size'],
+                        storage_node=storage_node,
+                    )
+
+                    chunk_responses.append({
+                        "temp_chunk_id": chunk_data['temp_chunk_id'],
+                        "chunk_id": real_chunk_id,
+                        "order": chunk_data['order'],
+                        "presigned_url": node_data['presigned_url'],
+                        "public_url": node_data['public_url'],
+                    })
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        response_data = {
+            "file_id": file_record.id,
+            "filename": file_record.filename,
+            "total_chunks": len(chunk_responses),
+            "chunks": chunk_responses,
+        }
+
+        response_serializer = FileUploadResponseSerializer(data=response_data)
+        response_serializer.is_valid(raise_exception=True)
+
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+    
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_file(request, file_id):
+
+    try:
+        file_obj = File.objects.get(pk=file_id, owner=request.user)
+    except File.DoesNotExist:
+        return Response({"error": "File not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    chunks = file_obj.chunks.select_related("storage_node").order_by("order")
+
+    chunk_responses = []
+    for chunk in chunks:
+        try:
+            node_response = requests.get(
+                f"{chunk.storage_node.address}/chunk/{chunk.chunk_id}",
+                headers={"Authorization": request.headers.get("Authorization")},
+                timeout=10,
+            )
+            node_response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            return Response(
+                {"error": f"Storage node unreachable for chunk {chunk.order}: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        node_data = node_response.json()
+
+        chunk_responses.append({
+            "chunk_id": chunk.chunk_id,
+            "order": chunk.order,
+            "size": chunk.size,
+            "presigned_url": node_data["presigned_url"],
+        })
+
+    return Response({
+        "file_id": str(file_obj.id),
+        "filename": file_obj.filename,
+        "size": file_obj.size,
+        "total_chunks": len(chunk_responses),
+        "chunks": chunk_responses,
+    }, status=status.HTTP_200_OK)  
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_files(request):
+    files = File.objects.filter(owner=request.user).order_by("-created_at")
+    data = [
+        {
+            "file_id": str(f.id),
+            "filename": f.filename,
+            "size": f.size,
+            "created_at": f.created_at.isoformat(),
+        }
+        for f in files
+    ]
+    return Response({"files": data}, status=status.HTTP_200_OK)
