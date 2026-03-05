@@ -40,7 +40,6 @@ class BucketClient:
                 Params={
                     'Bucket': self.bucket_name,
                     'Key': file_key,
-                    'ContentType': 'image/jpeg'  # Adjust as needed
                 },
                 ExpiresIn=expiration
             )
