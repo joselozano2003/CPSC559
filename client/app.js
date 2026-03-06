@@ -6,18 +6,15 @@ let authToken = null;
  * @param {*} level
  */
 function log(msg, level = 'info') {
-    const el = document.getElementById('log');  // Finds a <div id="log" element in the HTML>
-    const line = document.createElement('span');    // Creates a <span>
+    const el = document.getElementById('log');
+    const line = document.createElement('span');
     line.className = level;
-    // Prepend the timestamp to the message
     line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n`;
-    el.appendChild(line);   // Adds <span> into the <div>
+    el.appendChild(line);
     el.scrollTop = el.scrollHeight;
 }
 
-/**
- * API calls
- */
+// ========== API calls ==========
 
 async function realLogin(email, password, masterUrl) {
     const res = await fetch(`${masterUrl}/auth/login/`, {
@@ -25,7 +22,6 @@ async function realLogin(email, password, masterUrl) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
     });
-
     if (!res.ok) throw new Error('Login failed: ' + res.status);
     return res.json();
 }
@@ -49,30 +45,67 @@ async function handleLogin() {
     }
 }
 
-async function realInitUpload(metadata, masterUrl) {
-    const res = await fetch(`${masterUrl}/upload/`, {
+/**
+ * Tell the master server about the file and all its chunks.
+ * Returns presigned upload URLs for each chunk from MinIO.
+ */
+async function realInitUpload(file, chunks, masterUrl) {
+    const chunksMetadata = chunks.map((blob, i) => ({
+        temp_chunk_id: `tmp_${i}_${Date.now()}`,
+        order: i,
+        size: blob.size,
+    }));
+
+    const res = await fetch(`${masterUrl}/files/upload/`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify(metadata),
+        body: JSON.stringify({
+            filename: file.name,
+            size: file.size,
+            chunks: chunksMetadata,
+        }),
     });
 
     if (!res.ok) throw new Error('Upload init failed: ' + res.status);
     return res.json();
 }
 
-async function realUploadChunk(uploadUrl, chunkBlob) {
-    const res = await fetch(uploadUrl, {
-        method: 'POST',
+/**
+ * Upload a chunk blob directly to MinIO via the presigned URL.
+ * No auth header needed — auth is baked into the presigned URL.
+ */
+async function realUploadChunk(presignedUrl, chunkBlob) {
+    const res = await fetch(presignedUrl, {
+        method: 'PUT',
         body: chunkBlob,
     });
-
     if (!res.ok) throw new Error(`Chunk upload failed: ${res.status}`);
+}
 
+/**
+ * Get download metadata (presigned URLs) for each chunk of a file.
+ */
+async function realDownloadFile(fileId, masterUrl) {
+    const res = await fetch(`${masterUrl}/files/${fileId}/download/`, {
+        headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+    if (!res.ok) throw new Error('Download failed: ' + res.status);
     return res.json();
 }
+
+/**
+ * Fetch a chunk's binary data from MinIO via the presigned URL.
+ */
+async function realDownloadChunk(presignedUrl) {
+    const res = await fetch(presignedUrl);
+    if (!res.ok) throw new Error(`Chunk download failed: ${res.status}`);
+    return res.arrayBuffer();
+}
+
+// ========== Helpers ==========
 
 function formatBytes(bytes) {
     if (bytes < 1024) return bytes + ' B';
@@ -90,7 +123,6 @@ function chunkFile(file, chunkSize) {
         chunks.push(file.slice(offset, offset + chunkSize));
         offset += chunkSize;
     }
-
     return chunks;
 }
 
@@ -146,61 +178,108 @@ async function handleUpload() {
     renderChunks(numChunks);
     document.getElementById('btn-upload').disabled = true;
 
-    // Step 1: send metadata to master, get upload targets
-    const metadata = {
-      filename:   file.name,
-      size:       file.size,
-      chunk_size: chunkSize,
-      num_chunks: numChunks,
-    };
-
+    // Step 1: send file + chunk metadata to master, get presigned upload URLs
     log('Step 1: sending file metadata to master…');
     let chunkTargets;
     try {
-      const initResp = await realInitUpload(metadata, master);
-      chunkTargets = initResp.chunks;
-      log(`file_id: ${initResp.file_id}`, 'ok');
-      chunkTargets.forEach((t, i) =>
-        log(`  chunk ${i} → ${t.upload_url} (id: ${t.chunk_id})`)
-      );
+        const initResp = await realInitUpload(file, chunks, master);
+        chunkTargets = initResp.chunks;
+        log(`file_id: ${initResp.file_id}`, 'ok');
+        chunkTargets.forEach((t, i) =>
+            log(`  chunk ${i} → presigned URL received (id: ${t.chunk_id})`)
+        );
     } catch (e) {
-      log('Init upload failed: ' + e.message, 'err');
-      document.getElementById('btn-upload').disabled = false;
-      return;
+        log('Init upload failed: ' + e.message, 'err');
+        document.getElementById('btn-upload').disabled = false;
+        return;
     }
 
-    // Step 2: upload each chunk to its storage node
-    log('Step 2: uploading chunks to storage nodes…');
+    // Step 2: upload each chunk directly to MinIO via presigned URL
+    log('Step 2: uploading chunks to storage node…');
     let success = 0;
 
     for (let i = 0; i < chunkTargets.length; i++) {
-      const { upload_url } = chunkTargets[i];
-      setChunkState(i, 'uploading');
-      log(`  Uploading chunk ${i + 1}/${numChunks} → ${upload_url}`);
-      try {
-        const result = await realUploadChunk(upload_url, chunks[i]);
-        log(`  chunk ${i} stored: ${result.message}`, 'ok');
-        setChunkState(i, 'done');
-        success++;
-      } catch (e) {
-        log(`  chunk ${i} FAILED: ${e.message}`, 'err');
-        setChunkState(i, 'error');
-      }
+        const { presigned_url } = chunkTargets[i];
+        setChunkState(i, 'uploading');
+        log(`  Uploading chunk ${i + 1}/${numChunks}…`);
+        try {
+            await realUploadChunk(presigned_url, chunks[i]);
+            log(`  chunk ${i} stored`, 'ok');
+            setChunkState(i, 'done');
+            success++;
+        } catch (e) {
+            log(`  chunk ${i} FAILED: ${e.message}`, 'err');
+            setChunkState(i, 'error');
+        }
     }
 
-    // Done 
     if (success === numChunks) {
-      log(`Upload complete. All ${numChunks} chunk(s) stored successfully.`, 'ok');
+        log(`Upload complete. All ${numChunks} chunk(s) stored successfully.`, 'ok');
     } else {
-      log(`Upload finished with errors. ${success}/${numChunks} chunks succeeded.`, 'err');
+        log(`Upload finished with errors. ${success}/${numChunks} chunks succeeded.`, 'err');
     }
 
     document.getElementById('btn-upload').disabled = false;
 }
 
+// ========== Download flow ==========
+
+async function handleDownload() {
+    const master = document.getElementById('master-url').value.trim();
+    const fileId = document.getElementById('file-id-input').value.trim();
+
+    if (!fileId) { log('No file ID entered', 'err'); return; }
+
+    document.getElementById('btn-download').disabled = true;
+    log(`Fetching metadata for file ${fileId}…`);
+
+    // Step 1: get file metadata and presigned download URLs from master
+    let metadata;
+    try {
+        metadata = await realDownloadFile(fileId, master);
+        log(`File: ${metadata.filename} (${formatBytes(metadata.size)})`, 'ok');
+        log(`Chunks: ${metadata.total_chunks}`);
+        renderChunks(metadata.chunks.length);
+    } catch (e) {
+        log('Download metadata failed: ' + e.message, 'err');
+        document.getElementById('btn-download').disabled = false;
+        return;
+    }
+
+    // Step 2: fetch each chunk from MinIO via presigned URL
+    const buffers = [];
+    for (let i = 0; i < metadata.chunks.length; i++) {
+        const { presigned_url } = metadata.chunks[i];
+        setChunkState(i, 'uploading');
+        log(`  Downloading chunk ${i + 1}/${metadata.chunks.length}…`);
+        try {
+            const buf = await realDownloadChunk(presigned_url);
+            buffers.push(buf);
+            setChunkState(i, 'done');
+        } catch (e) {
+            log(`  chunk ${i} FAILED: ${e.message}`, 'err');
+            setChunkState(i, 'error');
+        }
+    }
+
+    // Step 3: reassemble chunks and trigger browser download
+    const blob = new Blob(buffers);
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = metadata.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    log(`Download complete: ${metadata.filename}`, 'ok');
+    document.getElementById('btn-download').disabled = false;
+}
+
 // ========== Event Listeners ==========
+
 document.getElementById('btn-login').addEventListener('click', handleLogin);
 document.getElementById('btn-upload').addEventListener('click', handleUpload);
+document.getElementById('btn-download').addEventListener('click', handleDownload);
 
 document.getElementById('file-input').addEventListener('change', () => {
     const file = document.getElementById('file-input').files[0];
