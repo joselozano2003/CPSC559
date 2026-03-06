@@ -1,5 +1,5 @@
 let authToken = null;
-
+let refreshToken = localStorage.getItem("refreshToken");
 /**
  * used to display message in a log panel on the webpage
  * @param {*} msg
@@ -35,6 +35,7 @@ async function handleLogin() {
     try {
         const data = await realLogin(email, password, master);
         authToken = data.tokens.access;
+        localStorage.setItem("refreshToken", data.tokens.refresh)
         statusEl.textContent = `Logged in as ${data.user.email}`;
         statusEl.className = 'ok';
         log(`Logged in as ${data.user.email}`, 'ok');
@@ -43,6 +44,20 @@ async function handleLogin() {
         statusEl.className = 'err';
         log('Login failed: ' + e.message, 'err');
     }
+}
+
+async function refresh(){
+    const data = await fetch(`${document.getElementById('master-url').value.trim()}/auth/token/refresh/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({refresh: localStorage.getItem("refreshToken")}),
+    });
+    res = await data.json()
+    if (!data.ok) throw new Error('Token refresh failed.');
+    // refresh the access token
+    authToken = res.access;
 }
 
 /**
@@ -69,7 +84,15 @@ async function realInitUpload(file, chunks, masterUrl) {
         }),
     });
 
-    if (!res.ok) throw new Error('Upload init failed: ' + res.status);
+    if(res.status === 401){
+        try{
+            await refresh();
+        } catch (e) {
+            log(e.message + ' Log in first.');
+        }
+        // try again after refresh ?
+    }
+    else if (!res.ok) throw new Error('Upload init failed: ' + res.status);
     return res.json();
 }
 
@@ -92,6 +115,13 @@ async function realDownloadFile(fileId, masterUrl) {
     const res = await fetch(`${masterUrl}/files/${fileId}/download/`, {
         headers: { 'Authorization': `Bearer ${authToken}` },
     });
+    if(res.status === 401){
+        try{
+            await refresh();
+        } catch (e) {
+            log(e.message + ' Log in again.');
+        }
+    }
     if (!res.ok) throw new Error('Download failed: ' + res.status);
     return res.json();
 }
