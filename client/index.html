@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distributed File Storage - Client</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+
+        h1 {
+            color: #9cdcfe;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+        }
+
+        .section {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 4px;
+            color: #9cdcfe;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="email"],
+        input[type="password"] {
+            width: 100%;
+            padding: 6px 8px;
+            background: #2d2d2d;
+            border: 1px solid #555;
+            color: #d4d4d4;
+            box-sizing: border-box;
+        }
+
+        #auth-status {
+            margin-top: 6px;
+            font-size: 13px;
+            color: #888;
+        }
+
+        #auth-status.ok  { color: #4ec9b0; }
+        #auth-status.err { color: #f44747; }
+
+        input[type="file"] {
+            color: #d4d4d4;
+        }
+
+        button {
+            padding: 8px 20px;
+            background: #0e639c;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 14px;
+        }
+
+        button:hover { background: #1177bb; }
+        button:disabled { background: #444; cursor: not-allowed; }
+
+        /* Log panel */
+        #log {
+            background: #111;
+            border: 1px solid #444;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            white-space: pre;
+            font-size: 13px;
+        }
+
+        #log .info { color: #d4d4d4; }
+        #log .ok   { color: #4ec9b0; }
+        #log .warn { color: #dcdcaa; }
+        #log .err  { color: #f44747; }
+
+        /* Chunk progress */
+        #chunk-list {
+            margin-top: 12px;
+        }
+
+        .chunk-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+
+        .chunk-label {
+            width: 70px;
+            font-size: 12px;
+            color: #9cdcfe;
+        }
+
+        .chunk-bar-wrap {
+            flex: 1;
+            background: #2d2d2d;
+            height: 14px;
+            border: 1px solid #555;
+        }
+
+        .chunk-bar {
+            height: 100%;
+            width: 0%;
+            background: #0e639c;
+            transition: width 0.3s ease;
+        }
+
+        .chunk-bar.done  { background: #4ec9b0; }
+        .chunk-bar.error { background: #f44747; }
+
+        .chunk-status {
+            width: 70px;
+            font-size: 12px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Distributed File Storage</h1>
+
+    <div class="section">
+        <label for="master-url">Master Server URL</label>
+        <input type="text" id="master-url" value="http://localhost:8000" />
+    </div>
+
+    <div class="section">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" />
+    </div>
+
+    <div class="section">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="password" />
+    </div>
+
+    <div class="section">
+        <button id="btn-login">Login</button>
+        <div id="auth-status">Not logged in</div>
+    </div>
+
+    <div class="section">
+        <label for="file-input">Select File</label>
+        <input type="file" id="file-input" />
+    </div>
+
+    <div class="section">
+        <label for="chunk-size">Chunk Size (bytes)</label>
+        <input type="number" id="chunk-size" value="1048576" />
+        <!-- Default: 1 MB -->
+    </div>
+
+    <div class="section">
+        <button id="btn-upload">Upload</button>
+    </div>
+
+    <div class="section">
+        <label for="file-id-input">File ID (for download)</label>
+        <input type="text" id="file-id-input" placeholder="paste file_id here" />
+    </div>
+
+    <div class="section">
+        <button id="btn-download">Download</button>
+    </div>
+
+    <div class="section">
+        <label>Chunk Progress</label>
+        <div id="chunk-list"></div>
+    </div>
+
+    <div class="section">
+        <label>Log</label>
+        <div id="log"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
