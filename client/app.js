@@ -122,7 +122,7 @@ async function realDownloadFile(fileId, masterUrl) {
             log(e.message + ' Log in again.');
         }
     }
-    if (!res.ok) throw new Error('Download failed: ' + res.status);
+    else if (!res.ok) throw new Error('Download failed: ' + res.status);
     return res.json();
 }
 
