@@ -1,31 +1,29 @@
 import boto3
 import os
-from django.conf import settings
 from botocore.exceptions import ClientError
-import uuid
 
 
 class BucketClient:
     def __init__(self):
         # Check if we're using MinIO (local development)
-        endpoint_url = os.getenv('AWS_S3_ENDPOINT_URL')
+        endpoint_url = os.getenv('BUCKET_ENDPOINT_URL')
         if endpoint_url:
             self.s3_client = boto3.client(
                 's3',
                 endpoint_url=endpoint_url,
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                aws_access_key_id=os.getenv('BUCKET_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('BUCKET_SECRET_ACCESS_KEY'),
                 region_name=os.getenv('AWS_REGION', 'us-east-1')
             )
         else:
             # Production BUCKET
             self.s3_client = boto3.client('s3')
         
-        self.bucket_name = os.getenv('S3_BUCKET_NAME')
+        self.bucket_name = os.getenv('BUCKET_NAME')
         self.region = os.getenv('AWS_REGION', 'us-east-1')
         self.endpoint_url = endpoint_url
     
-    def generate_presigned_url(self, file_key: str, expiration: int = 3600) -> str:
+    def generate_presigned_upload_url(self, file_key: str, expiration: int = 3600) -> str:
         """
         Generate a presigned URL for uploading files to Bucket
         
@@ -42,7 +40,6 @@ class BucketClient:
                 Params={
                     'Bucket': self.bucket_name,
                     'Key': file_key,
-                    'ContentType': 'image/jpeg'  # Adjust as needed
                 },
                 ExpiresIn=expiration
             )
@@ -56,20 +53,32 @@ class BucketClient:
             print(f"Error generating presigned URL: {e}")
             return None
     
-    def generate_unique_filename(self, original_filename: str) -> str:
+    def generate_presigned_download_url(self, file_key: str, expiration: int = 3600) -> str:
+        try:
+            response = self.s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': file_key,
+                },
+                ExpiresIn=expiration
+            )
+            if self.endpoint_url and 'minio:9000' in response:
+                response = response.replace('minio:9000', 'localhost:9000')
+            return response
+        except ClientError as e:
+            print(f"Error generating presigned download URL: {e}")
+            return None
+    
+    def generate_object_key(self, chunk_id: str) -> str:
         """
-        Generate a unique filename for Bucket storage
-        
+        Generate a storage key for a chunk.
         Args:
-            original_filename: Original file name
-            user_id: User ID for organizing files
-        
+            chunk_id: The unique chunk identifier
         Returns:
-            Unique Bucket key
+            MinIO object key
         """
-        file_extension = original_filename.split('.')[-1] if '.' in original_filename else 'txt'
-        unique_id = str(uuid.uuid4())[:8]
-        return f"{unique_id}.{file_extension}"
+        return f"chunks/{chunk_id}"
     
     def get_public_url(self, file_key: str) -> str:
         """
