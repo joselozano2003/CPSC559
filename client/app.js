@@ -135,6 +135,61 @@ async function realDownloadChunk(presignedUrl) {
     return res.arrayBuffer();
 }
 
+// Casey changes ---------------------------------------------
+/**
+ * Get all files for this user.
+ */
+async function realListFiles(masterUrl) {
+    const res = await fetch(`${masterUrl}/files/`, {
+        headers: {
+            "Authorization": `Bearer ${authToken}`,
+        },
+    })
+    if(res.status === 401){
+        await refresh();
+        return realListFiles(masterUrl);
+    }
+
+    if (!res.ok) throw new Error("failed to fetch files");
+    return res.json();
+}
+
+/**
+ * UI handler for listing files.
+ */
+async function handleListFiles() {
+    const master = document.getElementById('master-url').value.trim();
+
+    try {
+        const data = await realListFiles(master);
+
+        const container = document.getElementById('user-files');
+        container.innerHTML = "";
+
+        data.files.forEach(file => {
+            const div = document.createElement('div');
+            div.className = 'file-row';
+
+            div.innerHTML = `
+                <span class="file-name">${file.filename}</span>
+                <span class="file-size">${formatBytes(file.size)}</span>
+                <span class="file-download"></span>    
+                    <button onclick="fillDownloadId('${file.file_id}')">
+                        Select File
+                    </button>
+            `;
+
+            container.appendChild(div);
+        });
+
+        log(`Loaded ${data.files.length} files(s)`, 'ok');
+    
+    } catch (e) {
+        log("failed to list files: " + e.message, "err");
+    }
+} 
+// Casey changes end------------------------------------------
+
 // ========== Helpers ==========
 
 function formatBytes(bytes) {
@@ -189,6 +244,11 @@ function setChunkState(index, state) {
         status.textContent = 'error';
     }
 }
+// Casey changes --------------------------------------
+function fillDownloadId(id) {
+    document.getElementById("file-id-input").value = id;
+}
+// Casey changes end-----------------------------------
 
 // ========== Upload flow ==========
 
@@ -316,4 +376,7 @@ document.getElementById('file-input').addEventListener('change', () => {
     if (file) log(`Selected: ${file.name} (${formatBytes(file.size)})`);
 });
 
+// Casey Changes ---
+document.getElementById("btn-list-files").addEventListener("click", handleListFiles);
+// Casey Changes ---
 log('Client ready.');
