@@ -147,9 +147,12 @@ async function realListFiles(masterUrl) {
     })
     if(res.status === 401){
         await refresh();
-        return realListFiles(masterUrl);
+        const retry = await fetch(`${masterUrl}/files/`, {
+            headers: {
+                "Authorization": `Bearer ${authToken}`,
+            },
+        });
     }
-
     if (!res.ok) throw new Error("failed to fetch files");
     return res.json();
 }
