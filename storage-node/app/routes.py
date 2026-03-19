@@ -1,8 +1,31 @@
+import threading
+import os
+import requests as req_lib
 from flask import Blueprint, jsonify, request
 from .auth import require_jwt
 from .bucketClient import BucketClient
 from .extensions import db
 from .models import Chunk
+
+MAIN_SERVER_URL = os.environ.get("MAIN_SERVER_URL", "http://main-server:8000")
+NODE_NAME = os.environ.get("NODE_NAME", "storage-node-1")
+NODE_ADDRESS = os.environ.get("NODE_ADDRESS", "http://storage-node:6000")
+HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "30"))
+
+
+def send_heartbeat():
+    try:
+        req_lib.post(
+            f"{MAIN_SERVER_URL}/nodes/heartbeat/",
+            json={"name": NODE_NAME, "address": NODE_ADDRESS},
+            timeout=5,
+        )
+    except Exception as e:
+        print(f"[heartbeat] failed: {e}", flush=True)
+    finally:
+        t = threading.Timer(HEARTBEAT_INTERVAL, send_heartbeat)
+        t.daemon = True
+        t.start()
 
 bp = Blueprint("chunks", __name__)
 

@@ -59,6 +59,7 @@ class ChunkUploadResponseSerializer(serializers.Serializer):
     chunk_id = serializers.CharField()
     order = serializers.IntegerField()
     presigned_url = serializers.URLField()
+    presigned_urls = serializers.ListField(child=serializers.URLField())
     public_url = serializers.URLField()
 
 

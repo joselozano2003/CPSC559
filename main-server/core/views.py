@@ -20,8 +20,16 @@ from django.utils import timezone
 from django.conf import settings
 from rest_framework.views import APIView
 from django.db import transaction
-from .models import File, Chunk, StorageNode
+from datetime import timedelta
+from .models import File, Chunk, StorageNode, ChunkReplica
 from .serializers import FileUploadRequestSerializer, FileUploadResponseSerializer
+
+HEARTBEAT_TIMEOUT = 90  # seconds
+REPLICATION_FACTOR = 2
+
+def get_active_nodes():
+    cutoff = timezone.now() - timedelta(seconds=HEARTBEAT_TIMEOUT)
+    return StorageNode.objects.filter(is_active=True, last_heartbeat__gte=cutoff)
 class IsOwnerOrReadOnly(BasePermission):
     """
     Custom permission to only allow users to edit their own profile.
@@ -79,6 +87,20 @@ def health_check(request):
             'database': 'disconnected',
             'error': str(e)
         }, status=503)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def node_heartbeat(request):
+    name = request.data.get("name")
+    address = request.data.get("address")
+    if not name or not address:
+        return Response({"error": "name and address required"}, status=400)
+    node, _ = StorageNode.objects.update_or_create(
+        name=name,
+        defaults={"address": address, "is_active": True, "last_heartbeat": timezone.now()},
+    )
+    return Response({"ok": True, "node_id": str(node.id)})
 
 
 @api_view(['POST'])
@@ -227,70 +249,66 @@ class FileUploadView(APIView):
         data = serializer.validated_data
         user = request.user
 
-        # Grab the single active storage node
-        storage_node = StorageNode.objects.filter(is_active=True).first()
-        if not storage_node:
+        active_nodes = list(get_active_nodes())
+        if len(active_nodes) < REPLICATION_FACTOR:
             return Response(
-                {"error": "No active storage node available."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE
+                {"error": f"Need {REPLICATION_FACTOR} active nodes, found {len(active_nodes)}"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
         chunk_responses = []
 
         try:
             with transaction.atomic():
-                # Create the File record
                 file_record = File.objects.create(
                     owner=user,
                     filename=data['filename'],
                     size=data['size'],
                 )
 
-                # For now we now use only 1 chunk as we only have 1 storage node, but this loop can be extended to support multiple nodes and chunk distribution
-                for chunk_data in sorted(data['chunks'], key=lambda c: c['order']):
+                node_count = len(active_nodes)
+                for i, chunk_data in enumerate(sorted(data['chunks'], key=lambda c: c['order'])):
                     real_chunk_id = str(uuid.uuid4())
+                    selected_nodes = [active_nodes[(i + r) % node_count] for r in range(REPLICATION_FACTOR)]
 
-                    # Call storage node to get presigned upload URL
-                    try:
-                        node_response = requests.put(
-                            f"{storage_node.address}/chunk",
-                            json={
-                                "chunk_id": str(real_chunk_id),
-                                "file_id": str(file_record.id),
-                            },
-                            headers={
-                                "Authorization": request.headers.get("Authorization")
-                            },
-                            timeout=10,
-                        )
-                        node_response.raise_for_status()
-                    except requests.exceptions.RequestException as e:
-                        raise Exception(f"Storage node unreachable: {str(e)}")
-
-                    node_data = node_response.json()
-
-                    # Save chunk record in master DB
-                    Chunk.objects.create(
+                    chunk_record = Chunk.objects.create(
                         file=file_record,
                         chunk_id=real_chunk_id,
                         order=chunk_data['order'],
                         size=chunk_data['size'],
-                        storage_node=storage_node,
                     )
+
+                    presigned_urls = []
+                    first_public_url = None
+                    for node in selected_nodes:
+                        try:
+                            resp = requests.put(
+                                f"{node.address}/chunk",
+                                json={"chunk_id": real_chunk_id, "file_id": str(file_record.id)},
+                                headers={"Authorization": request.headers.get("Authorization")},
+                                timeout=10,
+                            )
+                            resp.raise_for_status()
+                        except requests.exceptions.RequestException as e:
+                            raise Exception(f"Storage node {node.name} unreachable: {str(e)}")
+
+                        node_data = resp.json()
+                        presigned_urls.append(node_data['presigned_url'])
+                        if first_public_url is None:
+                            first_public_url = node_data['public_url']
+                        ChunkReplica.objects.create(chunk=chunk_record, storage_node=node)
 
                     chunk_responses.append({
                         "temp_chunk_id": chunk_data['temp_chunk_id'],
                         "chunk_id": real_chunk_id,
                         "order": chunk_data['order'],
-                        "presigned_url": node_data['presigned_url'],
-                        "public_url": node_data['public_url'],
+                        "presigned_url": presigned_urls[0],
+                        "presigned_urls": presigned_urls,
+                        "public_url": first_public_url,
                     })
 
         except Exception as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_502_BAD_GATEWAY
-            )
+            return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
         response_data = {
             "file_id": file_record.id,
@@ -314,30 +332,41 @@ def download_file(request, file_id):
     except File.DoesNotExist:
         return Response({"error": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    chunks = file_obj.chunks.select_related("storage_node").order_by("order")
-
+    cutoff = timezone.now() - timedelta(seconds=HEARTBEAT_TIMEOUT)
     chunk_responses = []
-    for chunk in chunks:
-        try:
-            node_response = requests.get(
-                f"{chunk.storage_node.address}/chunk/{chunk.chunk_id}",
-                headers={"Authorization": request.headers.get("Authorization")},
-                timeout=10,
-            )
-            node_response.raise_for_status()
-        except requests.exceptions.RequestException as e:
+
+    for chunk in file_obj.chunks.prefetch_related('replicas__storage_node').order_by('order'):
+        replicas = sorted(
+            chunk.replicas.all(),
+            key=lambda r: 0 if (r.storage_node and r.storage_node.last_heartbeat and r.storage_node.last_heartbeat >= cutoff) else 1,
+        )
+        presigned_url = None
+        for replica in replicas:
+            if not replica.storage_node:
+                continue
+            try:
+                r = requests.get(
+                    f"{replica.storage_node.address}/chunk/{chunk.chunk_id}",
+                    headers={"Authorization": request.headers.get("Authorization")},
+                    timeout=10,
+                )
+                r.raise_for_status()
+                presigned_url = r.json()['presigned_url']
+                break
+            except Exception:
+                continue
+
+        if not presigned_url:
             return Response(
-                {"error": f"Storage node unreachable for chunk {chunk.order}: {str(e)}"},
+                {"error": f"All replicas unreachable for chunk {chunk.order}"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
-
-        node_data = node_response.json()
 
         chunk_responses.append({
             "chunk_id": chunk.chunk_id,
             "order": chunk.order,
             "size": chunk.size,
-            "presigned_url": node_data["presigned_url"],
+            "presigned_url": presigned_url,
         })
 
     return Response({

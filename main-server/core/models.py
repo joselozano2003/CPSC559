@@ -63,7 +63,6 @@ class Chunk(models.Model):
     file = models.ForeignKey(File, on_delete=models.CASCADE, related_name="chunks")
     chunk_id = models.CharField(max_length=255, unique=True)
     size = models.IntegerField(null=True, blank=True)
-    storage_node = models.ForeignKey('StorageNode', on_delete=models.SET_NULL, null=True, related_name='chunks')
     order = models.IntegerField()
     uploaded_at = models.DateTimeField(null=True, blank=True)
 
@@ -73,7 +72,7 @@ class Chunk(models.Model):
 
     def __str__(self):
         return f"Chunk {self.order} of {self.file.filename}"
-    
+
 class StorageNode(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=128)
@@ -84,4 +83,13 @@ class StorageNode(models.Model):
 
     def __str__(self):
         return self.name
-    
+
+
+class ChunkReplica(models.Model):
+    chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name="replicas")
+    storage_node = models.ForeignKey(StorageNode, on_delete=models.SET_NULL, null=True, related_name="replicas")
+    confirmed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('chunk', 'storage_node')

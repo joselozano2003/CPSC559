@@ -1,5 +1,5 @@
 .env
-__pychache__/
+app/__pycache__/
 .venv/
 .vscode
 .DS_Store

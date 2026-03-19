@@ -29,6 +29,7 @@ urlpatterns = [
     path('download/chunk/<uuid:chunk_id>/', views.download_chunk, name='download_chunk'),
     #jp changes
 
+    path('nodes/heartbeat/', views.node_heartbeat, name='node-heartbeat'),
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('files/<uuid:file_id>/download/', views.download_file, name='file-download'),
     path('files/', views.list_files, name='list-files'),

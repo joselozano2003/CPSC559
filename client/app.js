@@ -193,13 +193,14 @@ function setChunkState(index, state) {
 // ========== Upload flow ==========
 
 async function handleUpload() {
-    const fileInput = document.getElementById('file-input');
-    const chunkSize = parseInt(document.getElementById('chunk-size').value);
-    const master    = document.getElementById('master-url').value.trim();
-    const file      = fileInput.files[0];
+    const fileInput      = document.getElementById('file-input');
+    const numChunksDesired = parseInt(document.getElementById('num-chunks').value) || 4;
+    const master         = document.getElementById('master-url').value.trim();
+    const file           = fileInput.files[0];
 
     if (!file) { log('No file selected', 'err'); return; }
 
+    const chunkSize = Math.ceil(file.size / numChunksDesired);
     const chunks    = chunkFile(file, chunkSize);
     const numChunks = chunks.length;
 
@@ -229,11 +230,14 @@ async function handleUpload() {
     let success = 0;
 
     for (let i = 0; i < chunkTargets.length; i++) {
-        const { presigned_url } = chunkTargets[i];
+        const target = chunkTargets[i];
+        const urls = (target.presigned_urls && target.presigned_urls.length > 0)
+            ? target.presigned_urls
+            : [target.presigned_url];
         setChunkState(i, 'uploading');
-        log(`  Uploading chunk ${i + 1}/${numChunks}…`);
+        log(`  Uploading chunk ${i + 1}/${numChunks} to ${urls.length} replica(s)…`);
         try {
-            await realUploadChunk(presigned_url, chunks[i]);
+            await Promise.all(urls.map(url => realUploadChunk(url, chunks[i])));
             log(`  chunk ${i} stored`, 'ok');
             setChunkState(i, 'done');
             success++;

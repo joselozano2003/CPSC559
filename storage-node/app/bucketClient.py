@@ -1,6 +1,9 @@
 import boto3
 import os
+from urllib.parse import urlparse
 from botocore.exceptions import ClientError
+
+MINIO_PUBLIC_HOST = os.getenv('MINIO_PUBLIC_HOST', 'localhost:9000')
 
 
 class BucketClient:
@@ -22,6 +25,12 @@ class BucketClient:
         self.bucket_name = os.getenv('BUCKET_NAME')
         self.region = os.getenv('AWS_REGION', 'us-east-1')
         self.endpoint_url = endpoint_url
+        # Extract internal host:port from endpoint URL for URL rewriting
+        if endpoint_url:
+            parsed = urlparse(endpoint_url)
+            self._internal_host = f"{parsed.hostname}:{parsed.port}"
+        else:
+            self._internal_host = None
     
     def generate_presigned_upload_url(self, file_key: str, expiration: int = 3600) -> str:
         """
@@ -45,8 +54,8 @@ class BucketClient:
             )
             
             # For MinIO, replace internal Docker address with localhost
-            if self.endpoint_url and 'minio:9000' in response:
-                response = response.replace('minio:9000', 'localhost:9000')
+            if self._internal_host and self._internal_host in response:
+                response = response.replace(self._internal_host, MINIO_PUBLIC_HOST)
             
             return response
         except ClientError as e:
@@ -63,8 +72,8 @@ class BucketClient:
                 },
                 ExpiresIn=expiration
             )
-            if self.endpoint_url and 'minio:9000' in response:
-                response = response.replace('minio:9000', 'localhost:9000')
+            if self._internal_host and self._internal_host in response:
+                response = response.replace(self._internal_host, MINIO_PUBLIC_HOST)
             return response
         except ClientError as e:
             print(f"Error generating presigned download URL: {e}")
@@ -92,7 +101,7 @@ class BucketClient:
         """
         if self.endpoint_url:
             # MinIO local development - use localhost for external access
-            external_url = self.endpoint_url.replace('minio:9000', 'localhost:9000')
+            external_url = self.endpoint_url.replace(self._internal_host, MINIO_PUBLIC_HOST) if self._internal_host else self.endpoint_url
             return f"{external_url}/{self.bucket_name}/{file_key}"
         else:
             # Production BUCKET Bucket

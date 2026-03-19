@@ -1,7 +1,7 @@
 import os
 from flask import Flask
 from .extensions import db
-from .routes import bp
+from .routes import bp, send_heartbeat
 
 def create_app():
     app = Flask(__name__)
@@ -15,6 +15,8 @@ def create_app():
         db.create_all()
 
     app.register_blueprint(bp)
+
+    send_heartbeat()
 
     @app.route('/health')
     def health():
