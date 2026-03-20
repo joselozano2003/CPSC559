@@ -1,5 +1,6 @@
 let authToken = null;
 let refreshToken = localStorage.getItem("refreshToken");
+let cachedFiles = [];
 /**
  * used to display message in a log panel on the webpage
  * @param {*} msg
@@ -331,62 +332,68 @@ async function realListFiles(masterUrl) {
     return res.json();
 }
 
+
 async function handleListFiles() {
     const master = document.getElementById('master-url').value.trim();
-    const sortBy = document.getElementById('sort-files').value;
 
     try {
         const data = await realListFiles(master);
+        cachedFiles = data.files; // cache files for sorting without refetching
 
+        renderFiles(); // render after fetching
 
-        const files = [...data.files];
+        log(`Loaded ${cachedFiles.length} file(s)`, 'ok');
 
-        files.sort((a, b) => {
-            if (sortBy == "newest") {
-                return new Date(b.created_at) - new Date(a.created_at);
-            }
-            if (sortBy == "oldest") {
-                return new Date(a.created_at) - new Date(b.created_at);
-            }
-            if (sortBy == "size") {
-                return b.size - a.size;
-            }
-            if (sortBy === "name") {
-                return a.filename.localeCompare(b.filename);
-            }
-            return 0;
-        });
-
-
-
-        const container = document.getElementById('user-files');
-        container.innerHTML = "";
-
-        files.forEach(file => {
-            const div = document.createElement('div');
-            div.className = 'file-row';
-
-            const createdAtText = file.created_at ? new Date(file.created_at).toLocaleString() : 'Unknown date';
-
-            div.innerHTML = `
-                <span class="file-name">${file.filename}</span>
-                <span class="file-size">${formatBytes(file.size)}</span>
-                <span class="file-date">${createdAtText}</span>
-                <span class="file-download">  
-                    <button onclick="fillDownloadId('${file.file_id}')">
-                        Select File
-                    </button>
-                </span>  
-            `;
-
-            container.appendChild(div);
-        });
-
-        log(`Loaded ${data.files.length} files(s)`, 'ok');
-    
     } catch (e) {
         log("failed to list files: " + e.message, "err");
     }
+}
+
+function renderFiles() {
+    const sortBy = document.getElementById('sort-files').value;
+
+    const files = [...cachedFiles];
+
+    files.sort((a, b) => {
+        if (sortBy === "newest") {
+            return new Date(b.created_at) - new Date(a.created_at);
+        }
+        if (sortBy === "oldest") {
+            return new Date(a.created_at) - new Date(b.created_at);
+        }
+        if (sortBy === "size") {
+            return b.size - a.size;
+        }
+        if (sortBy === "name") {
+            return a.filename.localeCompare(b.filename);
+        }
+        return 0;
+    });
+
+    const container = document.getElementById('user-files');
+    container.innerHTML = "";
+
+    files.forEach(file => {
+        const div = document.createElement('div');
+        div.className = 'file-row';
+
+        const createdAtText = file.created_at
+            ? new Date(file.created_at).toLocaleString()
+            : 'Unknown date';
+
+        div.innerHTML = `
+            <span class="file-name">${file.filename}</span>
+            <span class="file-size">${formatBytes(file.size)}</span>
+            <span class="file-date">${createdAtText}</span>
+            <span class="file-download">
+                <button onclick="fillDownloadId('${file.file_id}')">
+                    Select File
+                </button>
+            </span>
+        `;
+
+        container.appendChild(div);
+    });
 }
 
 // fill file id input with selected file's id for easy downloading
@@ -406,7 +413,7 @@ document.getElementById('file-input').addEventListener('change', () => {
 });
 
 document.getElementById("btn-list-files").addEventListener("click", handleListFiles);
-document.getElementById("sort-files").addEventListener("change", handleListFiles);
+document.getElementById("sort-files").addEventListener("change", renderFiles);
 
 
 log('Client ready.');
