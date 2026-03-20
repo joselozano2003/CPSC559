@@ -371,7 +371,13 @@ function renderFiles() {
     });
 
     const container = document.getElementById('user-files');
+    container.style.display = "block"; // show container if hidden
     container.innerHTML = "";
+
+    if (files.length === 0) {
+        container.innerHTML = `<div style="color:#888;">No files found</div>`;
+        return;
+    }
 
     files.forEach(file => {
         const div = document.createElement('div');
@@ -380,6 +386,8 @@ function renderFiles() {
         const createdAtText = file.created_at
             ? new Date(file.created_at).toLocaleString()
             : 'Unknown date';
+
+            
 
         div.innerHTML = `
             <span class="file-name">${file.filename}</span>
