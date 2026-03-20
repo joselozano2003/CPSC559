@@ -338,7 +338,7 @@ async function handleListFiles() {
 
     try {
         const data = await realListFiles(master);
-        cachedFiles = data.files; // cache files for sorting without refetching
+        cachedFiles = data.files; // cache files (metadata) for sorting without refetching
 
         renderFiles(); // render after fetching
 
