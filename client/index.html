@@ -124,6 +124,36 @@
             font-size: 12px;
             color: #888;
         }
+        .file-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 6px;
+            padding: 4px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .file-name {
+            flex: 1;
+        }
+
+        .file-size {
+            width: 80px;
+            text-align: right;
+            color: #888;
+        }
+
+        .file-download {
+            width: 100px;
+            text-align: right;
+        }
+        .file-date {
+            width: 180px;
+            text-align: right;
+            color: #888;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -173,6 +203,26 @@
         <button id="btn-download">Download</button>
     </div>
 
+
+    <div class="section">
+        <label for="sort-files">Sort files by</label>
+        <select id="sort-files">
+            <option value="newest">Date: Newest first</option>
+            <option value="oldest">Date: Oldest first</option>
+            <option value="name">Name: A-Z</option>
+            <option value="size">Size: Largest first</option>
+        </select>
+    </div>
+
+    <div class="section">
+        <button id="btn-list-files">List My Files</button>
+    </div>
+
+    <div class="section">
+        <label>My Files</label>
+        <div id="user-files"></div>
+    </div>
+    
     <div class="section">
         <label>Chunk Progress</label>
         <div id="chunk-list"></div>

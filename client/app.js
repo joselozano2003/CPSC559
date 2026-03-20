@@ -309,6 +309,91 @@ async function handleDownload() {
     document.getElementById('btn-download').disabled = false;
 }
 
+// ========== List Files flow ==========
+
+async function realListFiles(masterUrl) {
+    let res = await fetch(`${masterUrl}/files/`, {
+        headers: {
+            "Authorization": `Bearer ${authToken}`,
+        },
+    });
+
+    if (res.status === 401) {
+        await refresh();
+        res = await fetch(`${masterUrl}/files/`, {
+            headers: {
+                "Authorization": `Bearer ${authToken}`,
+            },
+        });
+    }
+
+    if (!res.ok) throw new Error("failed to fetch files");
+    return res.json();
+}
+
+async function handleListFiles() {
+    const master = document.getElementById('master-url').value.trim();
+    const sortBy = document.getElementById('sort-files').value;
+
+    try {
+        const data = await realListFiles(master);
+
+
+        const files = [...data.files];
+
+        files.sort((a, b) => {
+            if (sortBy == "newest") {
+                return new Date(b.created_at) - new Date(a.created_at);
+            }
+            if (sortBy == "oldest") {
+                return new Date(a.created_at) - new Date(b.created_at);
+            }
+            if (sortBy == "size") {
+                return b.size - a.size;
+            }
+            if (sortBy === "name") {
+                return a.filename.localeCompare(b.filename);
+            }
+            return 0;
+        });
+
+
+
+        const container = document.getElementById('user-files');
+        container.innerHTML = "";
+
+        files.forEach(file => {
+            const div = document.createElement('div');
+            div.className = 'file-row';
+
+            const createdAtText = file.created_at ? new Date(file.created_at).toLocaleString() : 'Unknown date';
+
+            div.innerHTML = `
+                <span class="file-name">${file.filename}</span>
+                <span class="file-size">${formatBytes(file.size)}</span>
+                <span class="file-date">${createdAtText}</span>
+                <span class="file-download">  
+                    <button onclick="fillDownloadId('${file.file_id}')">
+                        Select File
+                    </button>
+                </span>  
+            `;
+
+            container.appendChild(div);
+        });
+
+        log(`Loaded ${data.files.length} files(s)`, 'ok');
+    
+    } catch (e) {
+        log("failed to list files: " + e.message, "err");
+    }
+}
+
+// fill file id input with selected file's id for easy downloading
+function fillDownloadId(id) {
+    document.getElementById("file-id-input").value = id;
+}
+
 // ========== Event Listeners ==========
 
 document.getElementById('btn-login').addEventListener('click', handleLogin);
@@ -320,4 +405,10 @@ document.getElementById('file-input').addEventListener('change', () => {
     if (file) log(`Selected: ${file.name} (${formatBytes(file.size)})`);
 });
 
+document.getElementById("btn-list-files").addEventListener("click", handleListFiles);
+document.getElementById("sort-files").addEventListener("change", handleListFiles);
+
+
 log('Client ready.');
+
+
