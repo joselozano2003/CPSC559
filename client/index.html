@@ -154,6 +154,12 @@
             color: #888;
             font-size: 12px;
         }
+        .sort-row {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            padding-right: 10px;
+        }
     </style>
 </head>
 <body>
@@ -204,18 +210,17 @@
     </div>
 
 
-    <div class="section">
-        <label for="sort-files">Sort files by</label>
-        <select id="sort-files">
-            <option value="newest">Date: Newest first</option>
-            <option value="oldest">Date: Oldest first</option>
-            <option value="name">Name: A-Z</option>
-            <option value="size">Size: Largest first</option>
-        </select>
-    </div>
-
-    <div class="section">
+    <div class="section sort-row">
         <button id="btn-list-files">List My Files</button>
+        <div>
+            <label for="sort-files">Sort files by</label>
+            <select id="sort-files">
+                <option value="newest">Date: Newest first</option>
+                <option value="oldest">Date: Oldest first</option>
+                <option value="name">Name: A-Z</option>
+                <option value="size">Size: Largest first</option>
+            </select>
+        </div>
     </div>
 
     <div class="section">
