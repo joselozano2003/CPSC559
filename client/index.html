@@ -33,7 +33,8 @@
         input[type="text"],
         input[type="number"],
         input[type="email"],
-        input[type="password"] {
+        input[type="password"],
+        select {
             width: 100%;
             padding: 6px 8px;
             background: #2d2d2d;
@@ -41,15 +42,6 @@
             color: #d4d4d4;
             box-sizing: border-box;
         }
-
-        #auth-status {
-            margin-top: 6px;
-            font-size: 13px;
-            color: #888;
-        }
-
-        #auth-status.ok  { color: #4ec9b0; }
-        #auth-status.err { color: #f44747; }
 
         input[type="file"] {
             color: #d4d4d4;
@@ -68,7 +60,6 @@
         button:hover { background: #1177bb; }
         button:disabled { background: #444; cursor: not-allowed; }
 
-        /* Log panel */
         #log {
             background: #111;
             border: 1px solid #444;
@@ -84,7 +75,6 @@
         #log .warn { color: #dcdcaa; }
         #log .err  { color: #f44747; }
 
-        /* Chunk progress */
         #chunk-list {
             margin-top: 12px;
         }
@@ -124,6 +114,57 @@
             font-size: 12px;
             color: #888;
         }
+
+        .sort-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+        }
+
+        .sort-row > div {
+            flex: 1;
+        }
+
+        #user-files {
+            display: none;
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #444;
+            padding: 6px;
+            background: #111;
+        }
+
+        .file-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 6px;
+            padding: 6px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .file-name {
+            flex: 1;
+        }
+
+        .file-size {
+            width: 80px;
+            text-align: right;
+            color: #888;
+        }
+
+        .file-date {
+            width: 180px;
+            text-align: right;
+            color: #888;
+            font-size: 12px;
+        }
+
+        .file-download {
+            width: 100px;
+            text-align: right;
+        }
     </style>
 </head>
 <body>
@@ -131,23 +172,7 @@
     <h1>Distributed File Storage</h1>
 
     <div class="section">
-        <label for="master-url">Master Server URL</label>
-        <input type="text" id="master-url" value="http://localhost:8000" />
-    </div>
-
-    <div class="section">
-        <label for="email">Email</label>
-        <input type="email" id="email" placeholder="you@example.com" />
-    </div>
-
-    <div class="section">
-        <label for="password">Password</label>
-        <input type="password" id="password" placeholder="password" />
-    </div>
-
-    <div class="section">
-        <button id="btn-login">Login</button>
-        <div id="auth-status">Not logged in</div>
+        <button id="btn-logout">Logout</button>
     </div>
 
     <div class="section">
@@ -173,6 +198,24 @@
         <button id="btn-download">Download</button>
     </div>
 
+    <div class="section sort-row">
+        <div>
+            <label for="sort-files">Sort files by</label>
+            <select id="sort-files">
+                <option value="newest">Date: Newest first</option>
+                <option value="oldest">Date: Oldest first</option>
+                <option value="name">Name: A-Z</option>
+                <option value="size">Size: Largest first</option>
+            </select>
+        </div>
+        <button id="btn-list-files">List My Files</button>
+    </div>
+
+    <div class="section">
+        <label>My Files</label>
+        <div id="user-files"></div>
+    </div>
+    
     <div class="section">
         <label>Chunk Progress</label>
         <div id="chunk-list"></div>

@@ -4,13 +4,12 @@
 
 .PHONY: up
 up:
-	docker-compose up -d --build 
-
+	docker compose -f docker-compose.yml -f docker-compose.node2.yml up -d --build
 
 .PHONY: down
 down:
-	docker-compose down
+	docker compose -f docker-compose.yml -f docker-compose.node2.yml down
 
 .PHONY: downv
 downv:
-	docker-compose down -v
+	docker compose -f docker-compose.yml -f docker-compose.node2.yml down -v

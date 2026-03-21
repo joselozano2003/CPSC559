@@ -1,7 +1,7 @@
 ## Prerequisites:
 
 - Docker and Docker Compose installed on your machine.
-- Python 3.10 or higher installed (for local development).
+- Python 3.10 or higher installed (for local devecd ..lopment).
 
 **Note for Apple Silicon (M1/M2/M3) Users:**
 
