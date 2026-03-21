@@ -61,6 +61,7 @@ class ChunkUploadResponseSerializer(serializers.Serializer):
     presigned_url = serializers.URLField()
     presigned_urls = serializers.ListField(child=serializers.URLField())
     public_url = serializers.URLField()
+    replica_nodes = serializers.ListField(child=serializers.CharField(), required=False)
 
 
 class FileUploadResponseSerializer(serializers.Serializer):

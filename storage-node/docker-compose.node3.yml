@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  minio3:
+    image: minio/minio:latest
+    ports:
+      - "9004:9000"
+      - "9005:9001"
+    volumes:
+      - minio3_data:/data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  createbuckets3:
+    image: minio/mc:latest
+    depends_on:
+      minio3:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio3:9000 minioadmin minioadmin123;
+      /usr/bin/mc mb myminio/cpsc559-images --ignore-existing;
+      /usr/bin/mc anonymous set download myminio/cpsc559-images;
+      exit 0;
+      "
+
+  db-node3:
+    image: postgres:15
+    volumes:
+      - postgres3_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=hello_flask
+      - POSTGRES_PASSWORD=hello_password
+      - POSTGRES_DB=flask_db
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hello_flask"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cps559_network
+
+  storage-node3:
+    build: .
+    volumes:
+      - .:/app
+    ports:
+      - "6002:6000"
+    environment:
+      - DATABASE_URL=postgresql://hello_flask:hello_password@db-node3:5432/flask_db
+      - FLASK_DEBUG=1
+      - MAIN_SERVER_URL=http://main-server:8000
+      - BUCKET_ACCESS_KEY_ID=minioadmin
+      - BUCKET_SECRET_ACCESS_KEY=minioadmin123
+      - BUCKET_ENDPOINT_URL=http://minio3:9000
+      - BUCKET_NAME=cpsc559-images
+      - MINIO_PUBLIC_HOST=localhost:9004
+      - NODE_NAME=storage-node-3
+      - NODE_ADDRESS=http://storage-node3:6000
+    networks:
+      - cps559_network
+    depends_on:
+      db-node3:
+        condition: service_healthy
+      createbuckets3:
+        condition: service_completed_successfully
+
+volumes:
+  postgres3_data:
+  minio3_data:
+
+networks:
+  cps559_network:
+    external: true

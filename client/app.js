@@ -256,6 +256,12 @@ function renderFiles() {
             ? new Date(file.created_at).toLocaleString()
             : 'Unknown date';
 
+        const chunkDetails = (file.chunks || []).map(chunk => `
+            <div style="margin-left: 12px; font-size: 12px; color: #888;">
+                Chunk ${chunk.order}: ${chunk.replica_nodes.join(', ')}
+            </div>
+        `).join('');
+
         div.innerHTML = `
             <span class="file-name">${file.filename}</span>
             <span class="file-size">${formatBytes(file.size)}</span>
@@ -265,6 +271,9 @@ function renderFiles() {
                     Select File
                 </button>
             </span>
+            <div style="width: 100%; margin-top: 6px;">
+                ${chunkDetails}
+            </div>
         `;
 
         container.appendChild(div);
@@ -306,9 +315,10 @@ async function handleUpload() {
         chunkTargets = initResp.chunks;
 
         log(`file_id: ${initResp.file_id}`, 'ok');
-        chunkTargets.forEach((t, i) =>
-            log(`  chunk ${i} → presigned URL received (id: ${t.chunk_id})`)
-        );
+        chunkTargets.forEach((t, i) => {
+            const replicas = t.replica_nodes ? t.replica_nodes.join(', ') : 'unknown nodes';
+            log(`  chunk ${i} → id: ${t.chunk_id} replicas: ${replicas}`);
+        });
     } catch (e) {
         log('Init upload failed: ' + e.message, 'err');
         document.getElementById('btn-upload').disabled = false;

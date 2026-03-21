@@ -25,7 +25,7 @@ from .models import File, Chunk, StorageNode, ChunkReplica
 from .serializers import FileUploadRequestSerializer, FileUploadResponseSerializer
 
 HEARTBEAT_TIMEOUT = 90  # seconds
-REPLICATION_FACTOR = 2
+REPLICATION_FACTOR = 3
 
 def get_active_nodes():
     cutoff = timezone.now() - timedelta(seconds=HEARTBEAT_TIMEOUT)
@@ -305,6 +305,7 @@ class FileUploadView(APIView):
                         "presigned_url": presigned_urls[0],
                         "presigned_urls": presigned_urls,
                         "public_url": first_public_url,
+                        "replica_nodes": [node.name for node in selected_nodes],
                     })
 
         except Exception as e:
@@ -377,18 +378,36 @@ def download_file(request, file_id):
         "chunks": chunk_responses,
     }, status=status.HTTP_200_OK)  
 
-
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_files(request):
-    files = File.objects.filter(owner=request.user).order_by("-created_at")
-    data = [
-        {
+    files = (
+        File.objects.filter(owner=request.user)
+        .prefetch_related("chunks__replicas__storage_node")
+        .order_by("-created_at")
+    )
+
+    data = []
+    for f in files:
+        file_chunks = []
+        for chunk in f.chunks.all().order_by("order"):
+            file_chunks.append({
+                "chunk_id": str(chunk.chunk_id),
+                "order": chunk.order,
+                "size": chunk.size,
+                "replica_nodes": [
+                    replica.storage_node.name
+                    for replica in chunk.replicas.all()
+                    if replica.storage_node
+                ],
+            })
+
+        data.append({
             "file_id": str(f.id),
             "filename": f.filename,
             "size": f.size,
             "created_at": f.created_at.isoformat(),
-        }
-        for f in files
-    ]
+            "chunks": file_chunks,
+        })
+
     return Response({"files": data}, status=status.HTTP_200_OK)
