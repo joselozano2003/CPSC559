@@ -105,9 +105,17 @@ cd storage-node
 docker compose -f docker-compose.node2.yml up --build
 ```
 
+**4. Start storage node 3**
 ```bash
 cd storage-node
 docker compose -f docker-compose.node3.yml up --build
 ```
 
 Once all three are running, the storage nodes will register themselves with the main server automatically. No manual configuration is needed. The system is ready when both nodes have sent their first heartbeat.
+
+**5. stop processes, do this in main-server, and storage-node**
+```bash
+docker compose -f docker-compose.node3.yml down --remove-orphans
+docker compose -f docker-compose.node2.yml down --remove-orphans
+docker compose down --remove-orphans
+```
