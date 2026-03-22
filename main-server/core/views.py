@@ -392,3 +392,78 @@ def list_files(request):
         for f in files
     ]
     return Response({"files": data}, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# Bully election endpoints
+# ---------------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def election(request):
+    """
+    Receive an ELECTION message from a lower-ID peer.
+    If we outrank the sender we return {"bully": true} and start our own election in a background thread.
+    """
+    from .election import election_manager
+    sender_id = request.data.get("sender_id")
+    if sender_id is None:
+        return Response({"error": "sender_id required"}, status=400)
+    outranks = election_manager.handle_election(int(sender_id))
+    return Response({"bully": outranks})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def bully(request):
+    """
+    Receive a BULLY message from a higher-ID peer on a separate channel.
+    This signals that a higher node is alive and taking over the election.
+    """
+    from .election import election_manager
+    election_manager.handle_bully()
+    return Response({"ok": True})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def leader(request):
+    """
+    Receive a LEADER message — the sender has won the election.
+    """
+    from .election import election_manager
+    leader_id = request.data.get("leader_id")
+    leader_address = request.data.get("leader_address")
+    if leader_id is None or not leader_address:
+        return Response({"error": "leader_id and leader_address required"}, status=400)
+    election_manager.handle_leader(int(leader_id), leader_address)
+    return Response({"ok": True})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def leader_info(request):
+    """
+    Return who the current leader is.
+    Storage nodes and peers call this to discover the leader.
+    """
+    from .election import election_manager
+    if election_manager.leader_id is None:
+        return Response({"error": "No leader elected yet"}, status=503)
+    return Response({
+        "leader_id": election_manager.leader_id,
+        "leader_address": election_manager.leader_address,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def heartbeat_check(request):
+    """
+    Peers call this to verify this server is alive.
+    Also returns this server's ID so callers know who they are talking to.
+    """
+    return Response({
+        "ok": True,
+        "server_id": int(os.environ.get("SERVER_ID", 1)),
+    })

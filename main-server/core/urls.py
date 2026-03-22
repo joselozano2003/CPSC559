@@ -33,8 +33,15 @@ urlpatterns = [
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('files/<uuid:file_id>/download/', views.download_file, name='file-download'),
     path('files/', views.list_files, name='list-files'),
-    
+
+    # Bully election endpoints
+    path('election/', views.election, name='election'),
+    path('bully/', views.bully, name='bully'),
+    path('leader-announce/', views.leader, name='leader-announce'),
+    path('leader/', views.leader_info, name='leader-info'),
+    path('heartbeat/', views.heartbeat_check, name='heartbeat-check'),
+
     # API endpoints
     path('api/', include(router.urls)),
-    
+
 ]
