@@ -1,5 +1,31 @@
 version: "3.9"
 
+# All three main-server instances share the same Postgres DB.
+# PEER_SERVERS lists every instance (including self) so each node
+# knows all addresses. The election code filters out self when needed.
+
+x-main-server-common: &main-server-common
+  build: .
+  command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+  volumes:
+    - .:/app
+  environment:
+    - DEBUG=${DEBUG}
+    - SECRET_KEY=${SECRET_KEY}
+    - DB_NAME=${DB_NAME}
+    - DB_USER=${DB_USER}
+    - DB_PASSWORD=${DB_PASSWORD}
+    - DB_HOST=db
+    - DB_PORT=5432
+    - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000
+    - STORAGE_NODE_URLS=http://storage-node:6000
+    - NGINX_UPDATER_URL=http://nginx:8080
+  networks:
+    - cps559_network
+  depends_on:
+    db:
+      condition: service_healthy
+
 services:
   db:
     image: postgres:17
@@ -19,26 +45,67 @@ services:
       timeout: 5s
       retries: 5
 
-  main-server:
-    build: .
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
-    volumes:
-      - .:/app
+  nginx:
+    build: ../nginx
     ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
-      - DEBUG=${DEBUG}
-      - SECRET_KEY=${SECRET_KEY}
-      # - AWS_ACCESS_KEY_ID=minioadmin
-      # - AWS_SECRET_ACCESS_KEY=minioadmin123
-      # - AWS_S3_ENDPOINT_URL=http://minio:9000
-      # - S3_BUCKET_NAME=maple-quest-images
+      - "80:80"       # client entry point (static address)
+      - "8080:8080"   # updater API (called by elected leader)
     networks:
       - cps559_network
-    depends_on:
-      db:
-        condition: service_healthy
+
+  main-server-1:
+    <<: *main-server-common
+    environment:
+      - DEBUG=${DEBUG}
+      - SECRET_KEY=${SECRET_KEY}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - SERVER_ID=1
+      - OWN_ADDRESS=http://main-server-1:8000
+      - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000
+      - STORAGE_NODE_URLS=http://storage-node:6000
+      - NGINX_UPDATER_URL=http://nginx:8080
+    ports:
+      - "8001:8000"   # exposed for direct debugging only
+
+  main-server-2:
+    <<: *main-server-common
+    environment:
+      - DEBUG=${DEBUG}
+      - SECRET_KEY=${SECRET_KEY}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - SERVER_ID=2
+      - OWN_ADDRESS=http://main-server-2:8000
+      - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000
+      - STORAGE_NODE_URLS=http://storage-node:6000
+      - NGINX_UPDATER_URL=http://nginx:8080
+    ports:
+      - "8002:8000"
+
+  main-server-3:
+    <<: *main-server-common
+    environment:
+      - DEBUG=${DEBUG}
+      - SECRET_KEY=${SECRET_KEY}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - SERVER_ID=3
+      - OWN_ADDRESS=http://main-server-3:8000
+      - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000
+      - STORAGE_NODE_URLS=http://storage-node:6000
+      - NGINX_UPDATER_URL=http://nginx:8080
+    ports:
+      - "8003:8000"
 
 volumes:
   postgres_data:

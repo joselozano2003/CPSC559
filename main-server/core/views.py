@@ -38,7 +38,7 @@ class IsOwnerOrReadOnly(BasePermission):
         # Read permissions for any authenticated user
         if request.method in ['GET']:
             return True
-        
+
         # Write permissions only to the owner of the profile
         return obj.user_id == request.user.user_id
 
@@ -56,11 +56,11 @@ def get_tokens_for_user(user):
     """Generate JWT tokens for our custom User model"""
     # User model now has all required Django authentication attributes
     refresh = RefreshToken.for_user(user)
-    
+
     # Add custom claims
     refresh['user_id'] = user.user_id
     refresh['email'] = user.email
-    
+
     return {
         'refresh': str(refresh),
         'access': str(refresh.access_token),
@@ -74,7 +74,7 @@ def health_check(request):
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
-        
+
         return JsonResponse({
             'status': 'healthy',
             'timestamp': timezone.now().isoformat(),
@@ -115,19 +115,19 @@ def register(request):
         user_id = str(uuid.uuid4())[:15]
         while User.objects.filter(user_id=user_id).exists():
             user_id = str(uuid.uuid4())[:15]
-        
+
         serializer.validated_data['user_id'] = user_id
         user = serializer.save()
-        
+
         # Generate JWT tokens
         tokens = get_tokens_for_user(user)
-        
+
         return Response({
             'user': UserProfileSerializer(user).data,
             'tokens': tokens,
             'message': 'User registered successfully'
         }, status=status.HTTP_201_CREATED)
-    
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -141,13 +141,13 @@ def login(request):
     if serializer.is_valid():
         email = serializer.validated_data['email']
         password = serializer.validated_data['password']
-        
+
         try:
             user = User.objects.get(email=email)
             if user.check_password(password):
                 # Generate JWT tokens
                 tokens = get_tokens_for_user(user)
-                
+
                 return Response({
                     'user': UserProfileSerializer(user).data,
                     'tokens': tokens,
@@ -161,20 +161,20 @@ def login(request):
             return Response({
                 'error': 'Invalid credentials'
             }, status=status.HTTP_401_UNAUTHORIZED)
-    
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()  # Required for router, but filtered in get_queryset()
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated, IsOwner]
-    
+
     def get_queryset(self):
         """
         Users can only see their own profile
         """
         return User.objects.filter(user_id=self.request.user.user_id)
-    
+
     def get_serializer_class(self):
         """
         Use different serializers for different actions
@@ -182,13 +182,13 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.action in ['list', 'retrieve']:
             return UserProfileSerializer
         return UserSerializer
-    
+
     def perform_create(self, serializer):
         """
         Prevent creation through this endpoint - use registration instead
         """
         raise PermissionDenied("Use /auth/register/ to create new users")
-    
+
     @action(detail=False, methods=['get'])
     def me(self, request):
         """
@@ -196,7 +196,7 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data)
-    
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -214,11 +214,11 @@ def download_metadata(request, file_id):
         {
             "chunk_id": chunk.chunk_id,
             #"download_url": f"{chunk.storage_node}/download/chunk/{chunk.chunk_id}/"
-            
+
             "download_url": f"http://localhost:8000/download/chunk/{chunk.chunk_id}/" #testing
             '''
             curl -X POST http://localhost:8000/upload/ \ -H "Authorization: Bearer <ACCESS_TOKEN>" \ -H "Content-Type: application/json" \ -d '{"filename":"myfile.txt","size":12345,"num_chunks":3}'
-            
+
             curl -X GET http://localhost:8000/download/<FILE_ID>/ \ -H "Authorization: Bearer <ACCESS_TOKEN>"
             '''
         }
@@ -322,7 +322,7 @@ class FileUploadView(APIView):
         response_serializer.is_valid(raise_exception=True)
 
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-    
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -376,7 +376,7 @@ def download_file(request, file_id):
         "size": file_obj.size,
         "total_chunks": len(chunk_responses),
         "chunks": chunk_responses,
-    }, status=status.HTTP_200_OK)  
+    }, status=status.HTTP_200_OK)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -411,3 +411,78 @@ def list_files(request):
         })
 
     return Response({"files": data}, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# Bully election endpoints
+# ---------------------------------------------------------------------------
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def election(request):
+    """
+    Receive an ELECTION message from a lower-ID peer.
+    If we outrank the sender we return {"bully": true} and start our own election in a background thread.
+    """
+    from .election import election_manager
+    sender_id = request.data.get("sender_id")
+    if sender_id is None:
+        return Response({"error": "sender_id required"}, status=400)
+    outranks = election_manager.handle_election(int(sender_id))
+    return Response({"bully": outranks})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def bully(request):
+    """
+    Receive a BULLY message from a higher-ID peer on a separate channel.
+    This signals that a higher node is alive and taking over the election.
+    """
+    from .election import election_manager
+    election_manager.handle_bully()
+    return Response({"ok": True})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def leader(request):
+    """
+    Receive a LEADER message — the sender has won the election.
+    """
+    from .election import election_manager
+    leader_id = request.data.get("leader_id")
+    leader_address = request.data.get("leader_address")
+    if leader_id is None or not leader_address:
+        return Response({"error": "leader_id and leader_address required"}, status=400)
+    election_manager.handle_leader(int(leader_id), leader_address)
+    return Response({"ok": True})
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def leader_info(request):
+    """
+    Return who the current leader is.
+    Storage nodes and peers call this to discover the leader.
+    """
+    from .election import election_manager
+    if election_manager.leader_id is None:
+        return Response({"error": "No leader elected yet"}, status=503)
+    return Response({
+        "leader_id": election_manager.leader_id,
+        "leader_address": election_manager.leader_address,
+    })
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def heartbeat_check(request):
+    """
+    Peers call this to verify this server is alive.
+    Also returns this server's ID so callers know who they are talking to.
+    """
+    return Response({
+        "ok": True,
+        "server_id": int(os.environ.get("SERVER_ID", 1)),
+    })
