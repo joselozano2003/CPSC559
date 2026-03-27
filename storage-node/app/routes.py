@@ -7,7 +7,7 @@ from .bucketClient import BucketClient
 from .extensions import db
 from .models import Chunk
 
-MAIN_SERVER_URL = os.environ.get("MAIN_SERVER_URL", "http://main-server:8000")
+_main_server_url = os.environ.get("MAIN_SERVER_URL", "http://main-server:8000")
 NODE_NAME = os.environ.get("NODE_NAME", "storage-node-1")
 NODE_ADDRESS = os.environ.get("NODE_ADDRESS", "http://storage-node:6000")
 HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "30"))
@@ -16,7 +16,7 @@ HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "30"))
 def send_heartbeat():
     try:
         req_lib.post(
-            f"{MAIN_SERVER_URL}/nodes/heartbeat/",
+            f"{_main_server_url}/nodes/heartbeat/",
             json={"name": NODE_NAME, "address": NODE_ADDRESS},
             timeout=5,
         )
@@ -91,6 +91,18 @@ def get_chunk(chunk_id):
         "presigned_url": presigned_url,
         "success": True
     }), 200
+
+@bp.route("/set-leader", methods=["POST"])
+def set_leader():
+    global _main_server_url
+    data = request.get_json()
+    address = data.get("leader_address") if data else None
+    if not address:
+        return jsonify({"error": "leader_address required"}), 400
+    _main_server_url = address
+    print(f"[set-leader] Updated main server URL to {_main_server_url}", flush=True)
+    return jsonify({"ok": True}), 200
+
 
 @bp.route("/chunk/<chunk_id>/confirm", methods=["PATCH"])
 @require_jwt

@@ -5,7 +5,7 @@ let cachedFiles = [];
 // ========== Auth / Routing Helpers ==========
 
 function getMasterUrl() {
-    return localStorage.getItem("masterUrl") || "http://localhost:8000";
+    return localStorage.getItem("masterUrl") || "http://localhost";
 }
 
 function redirectToLogin() {

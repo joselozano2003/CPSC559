@@ -3,11 +3,6 @@ import requests
 from functools import wraps
 from flask import request, jsonify
 
-# Get the URL from your docker-compose environment variable
-# Defaulting to the name you provided: http://main-server:8000
-MAIN_SERVER_URL = os.environ.get("MAIN_SERVER_URL", "http://main-server:8000")
-VERIFY_ENDPOINT = f"{MAIN_SERVER_URL}/api/token/verify/"
-
 def require_jwt(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -15,13 +10,17 @@ def require_jwt(f):
         auth_header = request.headers.get("Authorization", "")
         if not auth_header or not auth_header.startswith("Bearer "):
             return jsonify({"error": "Missing or invalid Authorization header"}), 401
-        
+
         token = auth_header.split(" ", 1)[1]
+
+        # Read the current leader URL at request time so /set-leader updates take effect.
+        from .routes import _main_server_url
+        verify_endpoint = f"{_main_server_url}/api/token/verify/"
 
         # 2. Forward the token to your Django 'main-server'
         try:
             response = requests.post(
-                VERIFY_ENDPOINT,
+                verify_endpoint,
                 json={"token": token},
                 timeout=5  # Prevents Flask from hanging if Django is down
             )
@@ -40,7 +39,7 @@ def require_jwt(f):
 
         except requests.exceptions.RequestException as e:
             # This triggers if the 'main-server' container isn't reachable
-            print(f"CONNECTION ERROR: Could not reach {VERIFY_ENDPOINT}: {e}", flush=True)
+            print(f"CONNECTION ERROR: Could not reach {verify_endpoint}: {e}", flush=True)
             return jsonify({"error": "Authentication service unreachable"}), 500
 
     return decorated

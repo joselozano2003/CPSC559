@@ -1,13 +1,13 @@
 version: '3.8'
 
 services:
-  minio3:
+  minio5:
     image: minio/minio:latest
     ports:
-      - "9004:9000"
-      - "9005:9001"
+      - "9008:9000"
+      - "9009:9001"
     volumes:
-      - minio3_data:/data
+      - minio5_data:/data
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin123
@@ -18,29 +18,29 @@ services:
       timeout: 20s
       retries: 3
 
-  createbuckets3:
+  createbuckets5:
     image: minio/mc:latest
     depends_on:
-      minio3:
+      minio5:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio3:9000 minioadmin minioadmin123;
+      /usr/bin/mc alias set myminio http://minio5:9000 minioadmin minioadmin123;
       /usr/bin/mc mb myminio/cpsc559-images --ignore-existing;
       /usr/bin/mc anonymous set download myminio/cpsc559-images;
       exit 0;
       "
 
-  db-node3:
+  db-node5:
     image: postgres:15
     volumes:
-      - postgres3_data:/var/lib/postgresql/data
+      - postgres5_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=hello_flask
       - POSTGRES_PASSWORD=hello_password
       - POSTGRES_DB=flask_db
     ports:
-      - "5435:5432"
+      - "5437:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hello_flask"]
       interval: 10s
@@ -49,34 +49,34 @@ services:
     networks:
       - cps559_network
 
-  storage-node3:
+  storage-node5:
     build: .
     volumes:
       - .:/app
     ports:
-      - "6002:6000"
+      - "6004:6000"
     environment:
-      - DATABASE_URL=postgresql://hello_flask:hello_password@db-node3:5432/flask_db
+      - DATABASE_URL=postgresql://hello_flask:hello_password@db-node5:5432/flask_db
       - FLASK_DEBUG=1
       - MAIN_SERVER_URL=http://nginx
       - BUCKET_ACCESS_KEY_ID=minioadmin
       - BUCKET_SECRET_ACCESS_KEY=minioadmin123
-      - BUCKET_ENDPOINT_URL=http://minio3:9000
+      - BUCKET_ENDPOINT_URL=http://minio5:9000
       - BUCKET_NAME=cpsc559-images
-      - MINIO_PUBLIC_HOST=localhost:9004
-      - NODE_NAME=storage-node-3
-      - NODE_ADDRESS=http://storage-node3:6000
+      - MINIO_PUBLIC_HOST=localhost:9008
+      - NODE_NAME=storage-node-5
+      - NODE_ADDRESS=http://storage-node5:6000
     networks:
       - cps559_network
     depends_on:
-      db-node3:
+      db-node5:
         condition: service_healthy
-      createbuckets3:
+      createbuckets5:
         condition: service_completed_successfully
 
 volumes:
-  postgres3_data:
-  minio3_data:
+  postgres5_data:
+  minio5_data:
 
 networks:
   cps559_network:
