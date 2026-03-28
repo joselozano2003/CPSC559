@@ -422,12 +422,20 @@ def delete_file(request, file_id):
     except File.DoesNotExist:
         return Response({"error": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    errors = []
+    deleted_chunks = []
 
-    for chunk in file_obj.chunks.all():
+    for chunk in file_obj.chunks.all().order_by("order"):
+        replica_results = []
+
         for replica in chunk.replicas.all():
             node = replica.storage_node
+
             if not node:
+                replica_results.append({
+                    "node": None,
+                    "status": "skipped",
+                    "message": "Replica has no storage node",
+                })
                 continue
 
             try:
@@ -437,26 +445,47 @@ def delete_file(request, file_id):
                     timeout=10,
                 )
 
-                if resp.status_code not in (200, 404):
-                    errors.append({
-                        "chunk_id": chunk.chunk_id,
+                if resp.status_code == 200:
+                    replica_results.append({
                         "node": node.name,
-                        "status": resp.status_code,
+                        "status": "deleted",
+                        "message": "Chunk deleted from replica",
                     })
+                elif resp.status_code == 404:
+                    replica_results.append({
+                        "node": node.name,
+                        "status": "missing",
+                        "message": "Chunk not on replica",
+                    })
+                else:
+                    replica_results.append({
+                        "node": node.name,
+                        "status": "error",
+                        "message": f"Unexpected status {resp.status_code}",
+                    })
+
             except Exception as e:
-                errors.append({
-                    "chunk_id": chunk.chunk_id,
+                replica_results.append({
                     "node": node.name,
-                    "error": str(e),
+                    "status": "error",
+                    "message": str(e),
                 })
 
+        deleted_chunks.append({
+            "chunk_id": str(chunk.chunk_id),
+            "order": chunk.order,
+            "replicas": replica_results,
+        })
+
+    filename = file_obj.filename
     file_obj.delete()
 
     return Response({
         "success": True,
         "message": "File deleted",
         "file_id": str(file_id),
-        "errors": errors,
+        "filename": filename,
+        "chunks": deleted_chunks,
     }, status=status.HTTP_200_OK)
 
 

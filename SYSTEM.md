@@ -157,6 +157,12 @@ docker compose -p node5 -f docker-compose.node5.yml up --build
 Once all nodes are running, they will register themselves with the main server automatically via heartbeat. No manual configuration is needed.
 
 **4. Open the client**
+first register on the main server with the command:
+```bash
+curl -X POST http://localhost/auth/register/ \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@email.com","password":"password","first_name":"Test","last_name":"User"}'
+```
 
 Open `client/login.html` in a browser and log in. The default server URL is `http://localhost`, which routes through Nginx to the current leader.
 

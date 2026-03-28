@@ -1,6 +1,7 @@
 let authToken = localStorage.getItem("accessToken");
 let refreshToken = localStorage.getItem("refreshToken");
 let cachedFiles = [];
+let deletingFiles = new Set();
 
 // ========== Auth / Routing Helpers ==========
 
@@ -292,6 +293,16 @@ async function realDeleteFile(fileId, masterUrl) {
         method: 'DELETE',
     });
 
+    if (res.status === 404) {
+        return {
+            success: true,
+            already_deleted: true,
+            file_id: fileId,
+            message: 'File was already deleted',
+            chunks: [],
+        };
+    }
+
     if (!res.ok) {
         throw new Error('Delete failed: ' + res.status);
     }
@@ -303,42 +314,64 @@ async function handleDeleteFile(fileId) {
     const file = cachedFiles.find(f => f.file_id === fileId);
     const displayName = file ? file.filename : fileId;
 
+    if (deletingFiles.has(fileId)) {
+        log(`Delete already in progress for: ${displayName}`, 'warn');
+        return;
+    }
+
     const confirmed = window.confirm(`Delete ${displayName}?`);
     if (!confirmed) {
         return;
     }
 
-    try {
-        log(`Deleting file: ${displayName}`, 'info');
+    deletingFiles.add(fileId);
 
+    log(`Deleting file: ${displayName}`, 'warn');
+    log(`Step 1: sending delete request to leader...`, 'info');
+
+    try {
         const data = await realDeleteFile(fileId, getMasterUrl());
 
+        if (data.already_deleted) {
+            log(`File already deleted: ${displayName}`, 'warn');
+            await handleListFiles();
+            return;
+        }
+
+        log(`Step 2: leader coordinated replica deletion`, 'info');
+
         if (data.chunks && data.chunks.length > 0) {
-            log(`Delete returned ${data.chunks.length} chunk(s)`, 'info');
+            data.chunks.forEach((chunk) => {
+                log(`  deleting chunk ${chunk.order + 1}/${data.chunks.length}...`, 'info');
+                log(`  chunk ${chunk.order + 1} (${chunk.chunk_id})`, 'info');
 
-            data.chunks.forEach((chunk, index) => {
-                const replicaCount = chunk.replicas ? chunk.replicas.length : 0;
-                log(`  Deleting chunk ${index + 1}/${data.chunks.length} from ${replicaCount} replica(s)…`, 'info');
+                if (chunk.replicas && chunk.replicas.length > 0) {
+                    chunk.replicas.forEach(replica => {
+                        const nodeName = replica.node || 'unknown-node';
 
-                if (chunk.replicas) {
-                    chunk.replicas.forEach((replica) => {
-                        if (replica.success) {
-                            log(`    ${replica.node || 'unknown-node'} → deleted`, 'ok');
+                        if (replica.status === 'deleted') {
+                            log(`    ${nodeName} → deleted`, 'ok');
+                        } else if (replica.status === 'missing') {
+                            log(`    ${nodeName} → already missing`, 'warn');
+                        } else if (replica.status === 'skipped') {
+                            log(`    ${nodeName} → skipped (${replica.message})`, 'warn');
                         } else {
-                            const detail = replica.error
-                                ? replica.error
-                                : `status ${replica.status ?? 'unknown'}`;
-                            log(`    ${replica.node || 'unknown-node'} → FAILED: ${detail}`, 'err');
+                            log(`    ${nodeName} → error (${replica.message})`, 'err');
                         }
                     });
                 }
             });
         }
 
+        log(`Step 3: metadata removed from leader database`, 'info');
         log(`Delete complete: ${displayName}`, 'ok');
+
         await handleListFiles();
     } catch (e) {
         log(`Delete failed: ${e.message}`, 'err');
+        await handleListFiles();
+    } finally {
+        deletingFiles.delete(fileId);
     }
 }
 
