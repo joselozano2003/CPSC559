@@ -7,7 +7,7 @@ from . import views
 from .views import FileUploadView
 
 def home(request):
-    return HttpResponse("OK — MapleQuest is running!", status=200)
+    return HttpResponse("OK — Main Server is running!", status=200)
 
 # DRF Router for ViewSets
 router = DefaultRouter()
