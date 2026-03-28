@@ -412,6 +412,53 @@ def list_files(request):
 
     return Response({"files": data}, status=status.HTTP_200_OK)
 
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_file(request, file_id):
+    try:
+        file_obj = File.objects.prefetch_related(
+            "chunks__replicas__storage_node"
+        ).get(pk=file_id, owner=request.user)
+    except File.DoesNotExist:
+        return Response({"error": "File not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    errors = []
+
+    for chunk in file_obj.chunks.all():
+        for replica in chunk.replicas.all():
+            node = replica.storage_node
+            if not node:
+                continue
+
+            try:
+                resp = requests.delete(
+                    f"{node.address}/chunk/{chunk.chunk_id}",
+                    headers={"Authorization": request.headers.get("Authorization")},
+                    timeout=10,
+                )
+
+                if resp.status_code not in (200, 404):
+                    errors.append({
+                        "chunk_id": chunk.chunk_id,
+                        "node": node.name,
+                        "status": resp.status_code,
+                    })
+            except Exception as e:
+                errors.append({
+                    "chunk_id": chunk.chunk_id,
+                    "node": node.name,
+                    "error": str(e),
+                })
+
+    file_obj.delete()
+
+    return Response({
+        "success": True,
+        "message": "File deleted",
+        "file_id": str(file_id),
+        "errors": errors,
+    }, status=status.HTTP_200_OK)
+
 
 # ---------------------------------------------------------------------------
 # Bully election endpoints

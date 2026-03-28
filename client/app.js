@@ -270,6 +270,9 @@ function renderFiles() {
                 <button onclick="fillDownloadId('${file.file_id}')">
                     Select File
                 </button>
+                <button onclick="handleDeleteFile('${file.file_id}')">
+                    Delete
+                </button>
             </span>
             <div style="width: 100%; margin-top: 6px;">
                 ${chunkDetails}
@@ -282,6 +285,61 @@ function renderFiles() {
 
 function fillDownloadId(id) {
     document.getElementById("file-id-input").value = id;
+}
+
+async function realDeleteFile(fileId, masterUrl) {
+    const res = await fetchWithAuth(`${masterUrl}/files/${fileId}/delete/`, {
+        method: 'DELETE',
+    });
+
+    if (!res.ok) {
+        throw new Error('Delete failed: ' + res.status);
+    }
+
+    return res.json();
+}
+
+async function handleDeleteFile(fileId) {
+    const file = cachedFiles.find(f => f.file_id === fileId);
+    const displayName = file ? file.filename : fileId;
+
+    const confirmed = window.confirm(`Delete ${displayName}?`);
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+        log(`Deleting file: ${displayName}`, 'info');
+
+        const data = await realDeleteFile(fileId, getMasterUrl());
+
+        if (data.chunks && data.chunks.length > 0) {
+            log(`Delete returned ${data.chunks.length} chunk(s)`, 'info');
+
+            data.chunks.forEach((chunk, index) => {
+                const replicaCount = chunk.replicas ? chunk.replicas.length : 0;
+                log(`  Deleting chunk ${index + 1}/${data.chunks.length} from ${replicaCount} replica(s)…`, 'info');
+
+                if (chunk.replicas) {
+                    chunk.replicas.forEach((replica) => {
+                        if (replica.success) {
+                            log(`    ${replica.node || 'unknown-node'} → deleted`, 'ok');
+                        } else {
+                            const detail = replica.error
+                                ? replica.error
+                                : `status ${replica.status ?? 'unknown'}`;
+                            log(`    ${replica.node || 'unknown-node'} → FAILED: ${detail}`, 'err');
+                        }
+                    });
+                }
+            });
+        }
+
+        log(`Delete complete: ${displayName}`, 'ok');
+        await handleListFiles();
+    } catch (e) {
+        log(`Delete failed: ${e.message}`, 'err');
+    }
 }
 
 // ========== Upload flow ==========

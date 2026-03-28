@@ -121,3 +121,25 @@ def confirm_chunk(chunk_id):
     db.session.commit()
 
     return jsonify({"chunk_id": chunk_id, "confirmed": True, "success": True}), 200
+
+@bp.route("/chunk/<chunk_id>", methods=["DELETE"])
+@require_jwt
+def delete_chunk(chunk_id):
+    chunk = Chunk.query.filter_by(chunk_id=chunk_id).first()
+    if not chunk:
+        return jsonify({"error": "Chunk not found"}), 404
+
+    bucket_client = BucketClient()
+    deleted = bucket_client.delete_file(chunk.minio_object_key)
+
+    if not deleted:
+        return jsonify({"error": "Failed to delete chunk from bucket"}), 500
+
+    db.session.delete(chunk)
+    db.session.commit()
+
+    return jsonify({
+        "chunk_id": chunk_id,
+        "deleted": True,
+        "success": True
+    }), 200
