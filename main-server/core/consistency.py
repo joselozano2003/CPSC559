@@ -33,6 +33,9 @@ class TokenRingManager:
         peers.sort(key=lambda x: x[0])
         return peers
 
+    def other_peers(self):
+        return [(pid, addr) for pid, addr in self.peers if pid != self.server_id]
+
     def next_peer(self):
         ids = [pid for pid, _ in self.peers]
         if self.server_id not in ids:
@@ -50,21 +53,34 @@ class TokenRingManager:
 
     def receive_token(self):
         with self.token_condition:
+            if self.has_token:
+                logger.warning(f"[SC] Server {self.server_id} already has token")
             self.has_token = True
             self.token_condition.notify_all()
         logger.info(f"[SC] Server {self.server_id} received token")
 
     def pass_token(self):
-        next_addr = self.next_peer()
-        if not next_addr:
+        ids = [pid for pid, _ in self.peers]
+        if self.server_id not in ids:
+            logger.warning(f"[SC] Server {self.server_id} is not in peer list")
             return
-        try:
-            requests.post(f"{next_addr}/token/receive/", timeout=3)
-            with self.token_condition:
-                self.has_token = False
-            logger.info(f"[SC] Server {self.server_id} passed token to {next_addr}")
-        except Exception as e:
-            logger.error(f"[SC] Failed to pass token: {e}")
+
+        start_i = ids.index(self.server_id)
+
+        for offset in range(1, len(self.peers)):
+            next_i = (start_i + offset) % len(self.peers)
+            next_id, next_addr = self.peers[next_i]
+
+            try:
+                requests.post(f"{next_addr}/token/receive/", timeout=2)
+                with self.token_condition:
+                    self.has_token = False
+                logger.info(f"[SC] Server {self.server_id} passed token to server {next_id} at {next_addr}")
+                return
+            except Exception as e:
+                logger.warning(f"[SC] Failed to pass token to server {next_id} at {next_addr}: {e}")
+
+        logger.error(f"[SC] Server {self.server_id} could not pass token to any peer")
 
     def create_pending_ack(self, op_id, expected_count):
         with self.pending_ack_condition:
@@ -92,3 +108,5 @@ class TokenRingManager:
                     del self.pending_acks[op_id]
                     return False
                 self.pending_ack_condition.wait(timeout=remaining)
+
+token_ring_manager = TokenRingManager()

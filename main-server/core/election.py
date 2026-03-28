@@ -3,6 +3,7 @@ import threading
 import time
 import requests
 import logging
+from .consistency import token_ring_manager
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,8 @@ class ElectionManager:
         self.leader_id = self.server_id
         self.leader_address = self.own_address
         self._last_leader_change = time.time()
+        token_ring_manager.receive_token()
+        logger.info(f"[SC] Server {self.server_id} seeded token after becoming leader")
 
         # Broadcast COORDINATOR to all other peers
         for _, addr in self._all_other_peers():

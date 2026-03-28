@@ -9,6 +9,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
 from django.db import transaction
+import threading
 
 from django.views.decorators.csrf import csrf_exempt
 from .models import *
@@ -23,6 +24,7 @@ from django.db import transaction
 from datetime import timedelta
 from .models import File, Chunk, StorageNode, ChunkReplica
 from .serializers import FileUploadRequestSerializer, FileUploadResponseSerializer
+from .consistency import token_ring_manager
 
 HEARTBEAT_TIMEOUT = 90  # seconds
 REPLICATION_FACTOR = 3
@@ -412,83 +414,6 @@ def list_files(request):
 
     return Response({"files": data}, status=status.HTTP_200_OK)
 
-@api_view(["DELETE"])
-@permission_classes([IsAuthenticated])
-def delete_file(request, file_id):
-    try:
-        file_obj = File.objects.prefetch_related(
-            "chunks__replicas__storage_node"
-        ).get(pk=file_id, owner=request.user)
-    except File.DoesNotExist:
-        return Response({"error": "File not found"}, status=status.HTTP_404_NOT_FOUND)
-
-    deleted_chunks = []
-
-    for chunk in file_obj.chunks.all().order_by("order"):
-        replica_results = []
-
-        for replica in chunk.replicas.all():
-            node = replica.storage_node
-
-            if not node:
-                replica_results.append({
-                    "node": None,
-                    "status": "skipped",
-                    "message": "Replica has no storage node",
-                })
-                continue
-
-            try:
-                resp = requests.delete(
-                    f"{node.address}/chunk/{chunk.chunk_id}",
-                    headers={"Authorization": request.headers.get("Authorization")},
-                    timeout=10,
-                )
-
-                if resp.status_code == 200:
-                    replica_results.append({
-                        "node": node.name,
-                        "status": "deleted",
-                        "message": "Chunk deleted from replica",
-                    })
-                elif resp.status_code == 404:
-                    replica_results.append({
-                        "node": node.name,
-                        "status": "missing",
-                        "message": "Chunk not on replica",
-                    })
-                else:
-                    replica_results.append({
-                        "node": node.name,
-                        "status": "error",
-                        "message": f"Unexpected status {resp.status_code}",
-                    })
-
-            except Exception as e:
-                replica_results.append({
-                    "node": node.name,
-                    "status": "error",
-                    "message": str(e),
-                })
-
-        deleted_chunks.append({
-            "chunk_id": str(chunk.chunk_id),
-            "order": chunk.order,
-            "replicas": replica_results,
-        })
-
-    filename = file_obj.filename
-    file_obj.delete()
-
-    return Response({
-        "success": True,
-        "message": "File deleted",
-        "file_id": str(file_id),
-        "filename": filename,
-        "chunks": deleted_chunks,
-    }, status=status.HTTP_200_OK)
-
-
 # ---------------------------------------------------------------------------
 # Bully election endpoints
 # ---------------------------------------------------------------------------
@@ -562,3 +487,172 @@ def heartbeat_check(request):
         "ok": True,
         "server_id": int(os.environ.get("SERVER_ID", 1)),
     })
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_file(request, file_id):
+    try:
+        file_obj = File.objects.prefetch_related(
+            "chunks__replicas__storage_node"
+        ).get(pk=file_id, owner=request.user)
+    except File.DoesNotExist:
+        return Response({"error": "File not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    op_id = str(uuid.uuid4())
+    peer_list = token_ring_manager.other_peers()
+
+    got_token = token_ring_manager.wait_for_token(timeout=15)
+    if not got_token:
+        return Response(
+            {"error": "Timed out waiting for SC token"},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    logger = __import__("logging").getLogger(__name__)
+    logger.info(f"[SC] Server {token_ring_manager.server_id} acquired token for delete {file_id}")
+
+    token_ring_manager.create_pending_ack(op_id, len(peer_list))
+
+    try:
+        for _, addr in peer_list:
+            try:
+                requests.post(
+                    f"{addr}/sc/apply/",
+                    json={
+                        "op_id": op_id,
+                        "op_type": "delete_file",
+                        "payload": {"file_id": str(file_id)},
+                        "sender_address": token_ring_manager.own_address,
+                    },
+                    timeout=15,
+                )
+            except Exception as e:
+                logger.warning(f"[SC] Failed to send delete apply to {addr}: {e}")
+
+        ack_ok = token_ring_manager.wait_for_all_acks(op_id, timeout=10)
+        if not ack_ok:
+            logger.warning(f"[SC] Timed out waiting for all ACKs for delete {file_id}")
+
+        deleted_chunks = []
+
+        for chunk in file_obj.chunks.all().order_by("order"):
+            replica_results = []
+
+            for replica in chunk.replicas.all():
+                node = replica.storage_node
+
+                if not node:
+                    replica_results.append({
+                        "node": None,
+                        "status": "skipped",
+                        "message": "Replica has no storage node",
+                    })
+                    continue
+
+                try:
+                    resp = requests.delete(
+                        f"{node.address}/chunk/{chunk.chunk_id}",
+                        headers={"Authorization": request.headers.get("Authorization")},
+                        timeout=5,
+                    )
+
+                    if resp.status_code == 200:
+                        replica_results.append({
+                            "node": node.name,
+                            "status": "deleted",
+                            "message": "Chunk deleted from replica",
+                        })
+                    elif resp.status_code == 404:
+                        replica_results.append({
+                            "node": node.name,
+                            "status": "missing",
+                            "message": "Chunk not on replica",
+                        })
+                    else:
+                        replica_results.append({
+                            "node": node.name,
+                            "status": "error",
+                            "message": f"Unexpected status {resp.status_code}",
+                        })
+
+                except Exception as e:
+                    replica_results.append({
+                        "node": node.name,
+                        "status": "error",
+                        "message": str(e),
+                    })
+
+            deleted_chunks.append({
+                "chunk_id": str(chunk.chunk_id),
+                "order": chunk.order,
+                "replicas": replica_results,
+            })
+
+        filename = file_obj.filename
+        file_obj.delete()
+
+        return Response({
+            "success": True,
+            "message": "File deleted",
+            "file_id": str(file_id),
+            "filename": filename,
+            "sc": {
+                "token_acquired": True,
+                "op_id": op_id,
+                "acks_expected": len(peer_list),
+                "acks_received_or_timed_out": True,
+            },
+            "chunks": deleted_chunks,
+        }, status=status.HTTP_200_OK)
+
+    finally:
+        threading.Thread(
+            target=token_ring_manager.pass_token,
+            daemon=True,
+        ).start()
+        logger.info(f"[SC] Server {token_ring_manager.server_id} scheduled token pass after delete {file_id}")
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def receive_token(request):
+    token_ring_manager.receive_token()
+    return Response({"ok": True})
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def sc_apply(request):
+    op_id = request.data.get("op_id")
+    op_type = request.data.get("op_type")
+    payload = request.data.get("payload", {})
+
+    if not op_id or not op_type:
+        return Response({"error": "op_id and op_type required"}, status=400)
+
+    logger = __import__("logging").getLogger(__name__)
+    logger.info(
+        f"[SC] Server {token_ring_manager.server_id} received apply "
+        f"op_id={op_id} op_type={op_type} payload={payload}"
+    )
+
+    sender_address = request.data.get("sender_address")
+    if sender_address:
+        try:
+            requests.post(
+                f"{sender_address}/sc/ack/",
+                json={"op_id": op_id, "server_id": int(os.environ.get('SERVER_ID', 1))},
+                timeout=3,
+            )
+        except Exception as e:
+            logger.warning(f"[SC] Failed to send ACK for {op_id}: {e}")
+
+    return Response({"ok": True})
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def sc_ack(request):
+    op_id = request.data.get("op_id")
+    if not op_id:
+        return Response({"error": "op_id required"}, status=400)
+
+    token_ring_manager.receive_ack(op_id)
+    return Response({"ok": True})
