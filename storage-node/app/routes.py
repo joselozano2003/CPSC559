@@ -2,7 +2,7 @@ import threading
 import os
 import requests as req_lib
 from flask import Blueprint, jsonify, request
-from .auth import require_jwt
+from .auth import require_jwt, require_jwt_or_internal
 from .bucketClient import BucketClient
 from .extensions import db
 from .models import Chunk
@@ -123,7 +123,7 @@ def confirm_chunk(chunk_id):
     return jsonify({"chunk_id": chunk_id, "confirmed": True, "success": True}), 200
 
 @bp.route("/chunk/<chunk_id>", methods=["DELETE"])
-@require_jwt
+@require_jwt_or_internal
 def delete_chunk(chunk_id):
     chunk = Chunk.query.filter_by(chunk_id=chunk_id).first()
     if not chunk:

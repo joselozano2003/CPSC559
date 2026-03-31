@@ -45,7 +45,7 @@ Client (browser)
 
 - **JWT Authentication** - Users authenticate with email and password and receive a short-lived access token and a longer-lived refresh token. All file operations require a valid token. Storage nodes verify tokens by forwarding them to the main server through Nginx, so verification always reaches the current leader.
 
-- **Heartbeat-based node health** - Storage nodes continuously report their availability to the main server every 30 seconds. The main server uses this signal to decide which nodes are healthy enough to receive new chunks. A node that misses its heartbeat for 90 seconds is considered inactive.
+- **Heartbeat-based node health** - Storage nodes continuously report their availability to the main server every 30 seconds. The main server uses this signal to decide which nodes are healthy enough to receive new chunks. A node that misses its heartbeat for 90 seconds is considered inactive. Heartbeats also trigger eventual consistency recovery: when a node checks in, the main server automatically retries any chunk deletes that failed while the node was down.
 
 - **Leader election** - Main servers elect a leader using the bully algorithm. The server with the highest ID wins. On startup, each server waits a staggered delay before starting an election, so the highest-ID server claims leadership first. If the leader stops responding, the remaining servers detect this and hold a new election within about 15 seconds.
 
@@ -108,15 +108,21 @@ The main server will not assign new chunks to a node that has missed its heartbe
 
 Downloads degrade gracefully. For each chunk, the main server sorts replicas by node health and tries them in order. A download only fails if every replica for a given chunk is unreachable simultaneously. With 3 replicas per chunk, 2 of the 5 storage nodes can be down at the same time without losing access to any chunk.
 
+### When a storage node goes down during deletes
+
+If a chunk delete fails because the target node is unreachable, the main server records a `PendingDelete` entry for that node and chunk. The file record is still removed from the main server database immediately, so the file is no longer visible or accessible to users. When the storage node comes back online and sends its next heartbeat, the main server detects the pending delete and retries it automatically in a background thread. On success, the `PendingDelete` entry is cleared. This is the system's eventual consistency mechanism for deletes: the chunk data on a recovered node is guaranteed to be cleaned up within 30 seconds of the node rejoining the cluster.
+
 ### When a main server goes down
 
-If the downed server was a follower, there is no impact. If it was the leader, the bully election runs and a new leader is elected within about 15 seconds. All main servers share the same PostgreSQL database, so no metadata is lost.
+If the downed server was a follower, there is no impact. If it was the leader, the bully election runs and a new leader is elected within about 15 seconds. All main servers share the same PostgreSQL database, so no metadata is lost. Pending delete records are also stored in this shared database, so a leadership failover does not affect recovery.
 
 ## Consistency Model
 
 **Metadata (PostgreSQL):** Strong consistency. All main servers share one database. Nginx ensures only the elected leader receives client requests, so there are no concurrent conflicting writes to file or chunk records.
 
 **Chunk data (MinIO):** Eventual consistency. The client uploads to all 3 presigned URLs in parallel. If one upload fails partway through, that replica will be missing the chunk. There is no confirmation step back to the main server, so the missing replica is not detected until a download attempt hits that specific node.
+
+**Deletes:** Eventual consistency. When a file is deleted, the main server removes its metadata immediately and attempts to delete every chunk replica from each storage node. If a node is unreachable, the delete for that node is queued as a `PendingDelete` record. The next time that node sends a heartbeat, the main server retries the delete. The chunk is guaranteed to be removed within 30 seconds of the node coming back online.
 
 **Leader state:** Eventually consistent across the cluster. On election win, the leader broadcasts COORDINATOR to all peers and updates Nginx and all storage nodes. A peer that misses the broadcast self-corrects on the next heartbeat check.
 

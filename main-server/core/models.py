@@ -93,3 +93,13 @@ class ChunkReplica(models.Model):
 
     class Meta:
         unique_together = ('chunk', 'storage_node')
+
+
+class PendingDelete(models.Model):
+    storage_node = models.ForeignKey(StorageNode, on_delete=models.CASCADE, related_name="pending_deletes")
+    chunk_id = models.CharField(max_length=255)
+    retry_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('storage_node', 'chunk_id')

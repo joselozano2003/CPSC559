@@ -68,6 +68,7 @@ services:
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
       - STORAGE_NODE_URLS=http://storage-node:6000,http://storage-node2:6000,http://storage-node3:6000,http://storage-node4:6000,http://storage-node5:6000
       - NGINX_UPDATER_URL=http://nginx:8080
+      - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8001:8000"
 
@@ -86,6 +87,7 @@ services:
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
       - STORAGE_NODE_URLS=http://storage-node:6000,http://storage-node2:6000,http://storage-node3:6000,http://storage-node4:6000,http://storage-node5:6000
       - NGINX_UPDATER_URL=http://nginx:8080
+      - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8002:8000"
 
@@ -104,6 +106,7 @@ services:
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
       - STORAGE_NODE_URLS=http://storage-node:6000,http://storage-node2:6000,http://storage-node3:6000,http://storage-node4:6000,http://storage-node5:6000
       - NGINX_UPDATER_URL=http://nginx:8080
+      - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8003:8000"
 
@@ -122,6 +125,7 @@ services:
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
       - STORAGE_NODE_URLS=http://storage-node:6000,http://storage-node2:6000,http://storage-node3:6000,http://storage-node4:6000,http://storage-node5:6000
       - NGINX_UPDATER_URL=http://nginx:8080
+      - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8004:8000"
 
@@ -140,6 +144,7 @@ services:
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
       - STORAGE_NODE_URLS=http://storage-node:6000,http://storage-node2:6000,http://storage-node3:6000,http://storage-node4:6000,http://storage-node5:6000
       - NGINX_UPDATER_URL=http://nginx:8080
+      - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8005:8000"
 

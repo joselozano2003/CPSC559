@@ -22,12 +22,13 @@ from django.conf import settings
 from rest_framework.views import APIView
 from django.db import transaction
 from datetime import timedelta
-from .models import File, Chunk, StorageNode, ChunkReplica
+from .models import File, Chunk, StorageNode, ChunkReplica, PendingDelete
 from .serializers import FileUploadRequestSerializer, FileUploadResponseSerializer
 from .consistency import token_ring_manager
 
 HEARTBEAT_TIMEOUT = 90  # seconds
 REPLICATION_FACTOR = 3
+INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "cps559-internal-key")
 
 def get_active_nodes():
     cutoff = timezone.now() - timedelta(seconds=HEARTBEAT_TIMEOUT)
@@ -91,6 +92,32 @@ def health_check(request):
         }, status=503)
 
 
+def _retry_pending_deletes(node):
+    logger = __import__("logging").getLogger(__name__)
+    pending = list(PendingDelete.objects.filter(storage_node=node))
+    if not pending:
+        return
+    logger.info(f"[EC] Retrying {len(pending)} pending delete(s) for {node.name}")
+    for p in pending:
+        try:
+            resp = requests.delete(
+                f"{node.address}/chunk/{p.chunk_id}",
+                headers={"X-Internal-Key": INTERNAL_SECRET},
+                timeout=5,
+            )
+            if resp.status_code in (200, 404):
+                p.delete()
+                logger.info(f"[EC] Cleared pending delete chunk={p.chunk_id} on {node.name} (status {resp.status_code})")
+            else:
+                p.retry_count += 1
+                p.save(update_fields=["retry_count"])
+                logger.warning(f"[EC] Pending delete chunk={p.chunk_id} on {node.name} returned {resp.status_code}")
+        except Exception as e:
+            p.retry_count += 1
+            p.save(update_fields=["retry_count"])
+            logger.warning(f"[EC] Pending delete retry failed chunk={p.chunk_id} on {node.name}: {e}")
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def node_heartbeat(request):
@@ -102,6 +129,7 @@ def node_heartbeat(request):
         name=name,
         defaults={"address": address, "is_active": True, "last_heartbeat": timezone.now()},
     )
+    threading.Thread(target=_retry_pending_deletes, args=(node,), daemon=True).start()
     return Response({"ok": True, "node_id": str(node.id)})
 
 
@@ -581,6 +609,11 @@ def delete_file(request, file_id):
                         "status": "error",
                         "message": str(e),
                     })
+                    PendingDelete.objects.get_or_create(
+                        storage_node=node,
+                        chunk_id=str(chunk.chunk_id),
+                    )
+                    logger.info(f"[EC] Queued pending delete chunk={chunk.chunk_id} on {node.name}")
 
             deleted_chunks.append({
                 "chunk_id": str(chunk.chunk_id),

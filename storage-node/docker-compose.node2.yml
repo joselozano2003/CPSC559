@@ -69,6 +69,7 @@ services:
       - MINIO_PUBLIC_HOST=localhost:9002
       - NODE_NAME=storage-node-2
       - NODE_ADDRESS=http://storage-node2:6000
+      - INTERNAL_SECRET=cps559-internal-key
     networks:
       - cps559_network
     depends_on:
