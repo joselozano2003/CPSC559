@@ -143,6 +143,8 @@ def _sc_pass_token_async(context):
     logger.info(f"[SC] Server {token_ring_manager.server_id} scheduled token pass after {context}")
 
 
+MAX_RETRY_COUNT = 10
+
 def _retry_pending_deletes(node):
     logger = __import__("logging").getLogger(__name__)
     pending = list(PendingDelete.objects.filter(storage_node=node))
@@ -150,6 +152,9 @@ def _retry_pending_deletes(node):
         return
     logger.info(f"[EC] Retrying {len(pending)} pending delete(s) for {node.name}")
     for p in pending:
+        if p.retry_count >= MAX_RETRY_COUNT:
+            logger.warning(f"[EC] Giving up on pending delete chunk={p.chunk_id} on {node.name} after {p.retry_count} retries — manual investigation needed")
+            continue
         try:
             resp = requests.delete(
                 f"{node.address}/chunk/{p.chunk_id}",
@@ -401,6 +406,9 @@ class FileUploadView(APIView):
                         "replica_nodes": [node.name for node in selected_nodes],
                     })
 
+                file_record.status = File.STATUS_COMPLETE
+                file_record.save(update_fields=["status"])
+
             response_data = {
                 "file_id": file_record.id,
                 "filename": file_record.filename,
@@ -486,7 +494,7 @@ def download_file(request, file_id):
 @permission_classes([IsAuthenticated])
 def list_files(request):
     files = (
-        File.objects.filter(owner=request.user)
+        File.objects.filter(owner=request.user, status=File.STATUS_COMPLETE)
         .prefetch_related("chunks__replicas__storage_node")
         .order_by("-created_at")
     )
