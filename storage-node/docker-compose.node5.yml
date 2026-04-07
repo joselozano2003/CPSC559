@@ -17,6 +17,10 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    networks:
+      cps559_network:
+        aliases:
+          - minio5
 
   createbuckets5:
     image: minio/mc:latest
