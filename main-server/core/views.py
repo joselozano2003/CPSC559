@@ -10,6 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
 from django.db import transaction
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.views.decorators.csrf import csrf_exempt
 from .models import *
@@ -609,70 +610,43 @@ def delete_file(request, file_id):
             ack_timeout=10,
         )
 
-        deleted_chunks = []
-
+        # Collect all (chunk, node) pairs to delete in parallel
+        replicas_to_delete = []
         for chunk in file_obj.chunks.all().order_by("order"):
-            replica_results = []
-
             for replica in chunk.replicas.all():
-                node = replica.storage_node
+                replicas_to_delete.append((chunk, replica.storage_node))
 
-                if not node:
-                    replica_results.append({
-                        "node": None,
-                        "status": "skipped",
-                        "message": "Replica has no storage node",
-                    })
-                    continue
+        chunk_results = {}
+        for chunk in file_obj.chunks.all().order_by("order"):
+            chunk_results[str(chunk.chunk_id)] = {"chunk_id": str(chunk.chunk_id), "order": chunk.order, "replicas": []}
 
-                try:
-                    resp = requests.delete(
-                        f"{node.address}/chunk/{chunk.chunk_id}",
-                        headers={"Authorization": request.headers.get("Authorization")},
-                        timeout=5,
-                    )
+        def delete_replica(chunk, node):
+            if not node:
+                return str(chunk.chunk_id), {"node": None, "status": "skipped", "message": "Replica has no storage node"}
+            try:
+                resp = requests.delete(
+                    f"{node.address}/chunk/{chunk.chunk_id}",
+                    headers={"X-Internal-Key": INTERNAL_SECRET},
+                    timeout=5,
+                )
+                if resp.status_code == 200:
+                    return str(chunk.chunk_id), {"node": node.name, "status": "deleted", "message": "Chunk deleted from replica"}
+                elif resp.status_code == 404:
+                    return str(chunk.chunk_id), {"node": node.name, "status": "missing", "message": "Chunk not on replica"}
+                else:
+                    return str(chunk.chunk_id), {"node": node.name, "status": "error", "message": f"Unexpected status {resp.status_code}"}
+            except Exception as e:
+                PendingDelete.objects.get_or_create(storage_node=node, chunk_id=str(chunk.chunk_id))
+                logger.info(f"[EC] Queued pending delete chunk={chunk.chunk_id} on {node.name}")
+                return str(chunk.chunk_id), {"node": node.name, "status": "error", "message": str(e)}
 
-                    if resp.status_code == 200:
-                        replica_results.append({
-                            "node": node.name,
-                            "status": "deleted",
-                            "message": "Chunk deleted from replica",
-                        })
-                    elif resp.status_code == 404:
-                        replica_results.append({
-                            "node": node.name,
-                            "status": "missing",
-                            "message": "Chunk not on replica",
-                        })
-                    else:
-                        replica_results.append({
-                            "node": node.name,
-                            "status": "error",
-                            "message": f"Unexpected status {resp.status_code}",
-                        })
-                        PendingDelete.objects.get_or_create(
-                            storage_node=node,
-                            chunk_id=str(chunk.chunk_id),
-                        )
-                        logger.info(f"[EC] Queued pending delete chunk={chunk.chunk_id} on {node.name}")
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            futures = {executor.submit(delete_replica, chunk, node): (chunk, node) for chunk, node in replicas_to_delete}
+            for future in as_completed(futures):
+                chunk_id, result = future.result()
+                chunk_results[chunk_id]["replicas"].append(result)
 
-                except Exception as e:
-                    replica_results.append({
-                        "node": node.name,
-                        "status": "error",
-                        "message": str(e),
-                    })
-                    PendingDelete.objects.get_or_create(
-                        storage_node=node,
-                        chunk_id=str(chunk.chunk_id),
-                    )
-                    logger.info(f"[EC] Queued pending delete chunk={chunk.chunk_id} on {node.name}")
-
-            deleted_chunks.append({
-                "chunk_id": str(chunk.chunk_id),
-                "order": chunk.order,
-                "replicas": replica_results,
-            })
+        deleted_chunks = list(chunk_results.values())
 
         file_obj.delete()
 
