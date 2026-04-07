@@ -25,9 +25,11 @@ from datetime import timedelta
 from .models import File, Chunk, StorageNode, ChunkReplica, PendingDelete
 from .serializers import FileUploadRequestSerializer, FileUploadResponseSerializer
 from .consistency import token_ring_manager
+import logging
+logger = logging.getLogger(__name__)
 
 HEARTBEAT_TIMEOUT = 90  # seconds
-REPLICATION_FACTOR = 3
+REPLICATION_FACTOR = 5
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "cps559-internal-key")
 
 def get_active_nodes():
@@ -90,6 +92,54 @@ def health_check(request):
             'database': 'disconnected',
             'error': str(e)
         }, status=503)
+    
+def _sc_begin(op_type, payload, token_timeout=15, ack_timeout=10):
+    """
+    Begin an SC-wrapped operation:
+    1. wait for token
+    2. broadcast apply to peers
+    3. wait for ACKs (or timeout)
+    Returns: (op_id, peer_list, ack_ok)
+    """
+    op_id = str(uuid.uuid4())
+    peer_list = token_ring_manager.other_peers()
+
+    got_token = token_ring_manager.wait_for_token(timeout=token_timeout)
+    if not got_token:
+        raise TimeoutError("Timed out waiting for SC token")
+
+    logger.info(f"[SC] Server {token_ring_manager.server_id} acquired token for {op_type} op_id={op_id}")
+
+    token_ring_manager.create_pending_ack(op_id, len(peer_list))
+
+    for _, addr in peer_list:
+        try:
+            requests.post(
+                f"{addr}/sc/apply/",
+                json={
+                    "op_id": op_id,
+                    "op_type": op_type,
+                    "payload": payload,
+                    "sender_address": token_ring_manager.own_address,
+                },
+                timeout=3,
+            )
+        except Exception as e:
+            logger.warning(f"[SC] Failed to send {op_type} apply to {addr}: {e}")
+
+    ack_ok = token_ring_manager.wait_for_all_acks(op_id, timeout=ack_timeout)
+    if not ack_ok:
+        logger.warning(f"[SC] Timed out waiting for all ACKs for {op_type} op_id={op_id}")
+
+    return op_id, peer_list, ack_ok
+
+
+def _sc_pass_token_async(context):
+    threading.Thread(
+        target=token_ring_manager.pass_token,
+        daemon=True,
+    ).start()
+    logger.info(f"[SC] Server {token_ring_manager.server_id} scheduled token pass after {context}")
 
 
 def _retry_pending_deletes(node):
@@ -268,7 +318,6 @@ def download_chunk(request, chunk_id):
         return Response({"error": "Forbidden"}, status=403)
     return Response({"chunk_id": str(chunk.chunk_id), "storage_node": chunk.storage_node, "order": chunk.order})
 
-
 class FileUploadView(APIView):
 
     def post(self, request):
@@ -287,8 +336,20 @@ class FileUploadView(APIView):
             )
 
         chunk_responses = []
+        file_record = None
 
         try:
+            op_id, peer_list, ack_ok = _sc_begin(
+                op_type="upload_file",
+                payload={
+                    "filename": data["filename"],
+                    "size": data["size"],
+                    "chunk_count": len(data["chunks"]),
+                },
+                token_timeout=15,
+                ack_timeout=10,
+            )
+
             with transaction.atomic():
                 file_record = File.objects.create(
                     owner=user,
@@ -310,6 +371,7 @@ class FileUploadView(APIView):
 
                     presigned_urls = []
                     first_public_url = None
+
                     for node in selected_nodes:
                         try:
                             resp = requests.put(
@@ -338,21 +400,32 @@ class FileUploadView(APIView):
                         "replica_nodes": [node.name for node in selected_nodes],
                     })
 
+            response_data = {
+                "file_id": file_record.id,
+                "filename": file_record.filename,
+                "total_chunks": len(chunk_responses),
+                "chunks": chunk_responses,
+                "sc": {
+                    "token_acquired": True,
+                    "op_id": op_id,
+                    "acks_expected": len(peer_list),
+                    "acks_received_or_timed_out": ack_ok,
+                },
+            }
+
+            response_serializer = FileUploadResponseSerializer(data=response_data)
+            response_serializer.is_valid(raise_exception=True)
+
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+        except TimeoutError as e:
+            return Response({"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
-
-        response_data = {
-            "file_id": file_record.id,
-            "filename": file_record.filename,
-            "total_chunks": len(chunk_responses),
-            "chunks": chunk_responses,
-        }
-
-        response_serializer = FileUploadResponseSerializer(data=response_data)
-        response_serializer.is_valid(raise_exception=True)
-
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-
+        finally:
+            # only pass token if this request actually acquired it
+            if token_ring_manager.has_token:
+                _sc_pass_token_async(f"upload {data.get('filename', 'unknown')}")
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -526,40 +599,15 @@ def delete_file(request, file_id):
     except File.DoesNotExist:
         return Response({"error": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    op_id = str(uuid.uuid4())
-    peer_list = token_ring_manager.other_peers()
-
-    got_token = token_ring_manager.wait_for_token(timeout=15)
-    if not got_token:
-        return Response(
-            {"error": "Timed out waiting for SC token"},
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
-
-    logger = __import__("logging").getLogger(__name__)
-    logger.info(f"[SC] Server {token_ring_manager.server_id} acquired token for delete {file_id}")
-
-    token_ring_manager.create_pending_ack(op_id, len(peer_list))
+    filename = file_obj.filename
 
     try:
-        for _, addr in peer_list:
-            try:
-                requests.post(
-                    f"{addr}/sc/apply/",
-                    json={
-                        "op_id": op_id,
-                        "op_type": "delete_file",
-                        "payload": {"file_id": str(file_id)},
-                        "sender_address": token_ring_manager.own_address,
-                    },
-                    timeout=15,
-                )
-            except Exception as e:
-                logger.warning(f"[SC] Failed to send delete apply to {addr}: {e}")
-
-        ack_ok = token_ring_manager.wait_for_all_acks(op_id, timeout=10)
-        if not ack_ok:
-            logger.warning(f"[SC] Timed out waiting for all ACKs for delete {file_id}")
+        op_id, peer_list, ack_ok = _sc_begin(
+            op_type="delete_file",
+            payload={"file_id": str(file_id), "filename": filename},
+            token_timeout=15,
+            ack_timeout=10,
+        )
 
         deleted_chunks = []
 
@@ -602,6 +650,11 @@ def delete_file(request, file_id):
                             "status": "error",
                             "message": f"Unexpected status {resp.status_code}",
                         })
+                        PendingDelete.objects.get_or_create(
+                            storage_node=node,
+                            chunk_id=str(chunk.chunk_id),
+                        )
+                        logger.info(f"[EC] Queued pending delete chunk={chunk.chunk_id} on {node.name}")
 
                 except Exception as e:
                     replica_results.append({
@@ -621,7 +674,6 @@ def delete_file(request, file_id):
                 "replicas": replica_results,
             })
 
-        filename = file_obj.filename
         file_obj.delete()
 
         return Response({
@@ -633,17 +685,16 @@ def delete_file(request, file_id):
                 "token_acquired": True,
                 "op_id": op_id,
                 "acks_expected": len(peer_list),
-                "acks_received_or_timed_out": True,
+                "acks_received_or_timed_out": ack_ok,
             },
             "chunks": deleted_chunks,
         }, status=status.HTTP_200_OK)
 
+    except TimeoutError as e:
+        return Response({"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     finally:
-        threading.Thread(
-            target=token_ring_manager.pass_token,
-            daemon=True,
-        ).start()
-        logger.info(f"[SC] Server {token_ring_manager.server_id} scheduled token pass after delete {file_id}")
+        if token_ring_manager.has_token:
+            _sc_pass_token_async(f"delete {file_id}")
 
 @api_view(["POST"])
 @permission_classes([AllowAny])

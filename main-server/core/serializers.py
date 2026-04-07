@@ -27,21 +27,21 @@ class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
 
+
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['user_id', 'email', 'first_name', 'last_name', 'created_at']
         read_only_fields = ['user_id', 'points', 'created_at']
 
+
 class ChunkUploadRequestSerializer(serializers.Serializer):
-    """Represents a single chunk the client wants to upload."""
     temp_chunk_id = serializers.CharField()
     order = serializers.IntegerField(min_value=0)
     size = serializers.IntegerField(min_value=1)
 
 
 class FileUploadRequestSerializer(serializers.Serializer):
-    """Incoming upload request from the client."""
     filename = serializers.CharField(max_length=255)
     size = serializers.IntegerField(min_value=1)
     chunks = ChunkUploadRequestSerializer(many=True)
@@ -54,7 +54,6 @@ class FileUploadRequestSerializer(serializers.Serializer):
 
 
 class ChunkUploadResponseSerializer(serializers.Serializer):
-    """Returned to client for each chunk."""
     temp_chunk_id = serializers.CharField()
     chunk_id = serializers.CharField()
     order = serializers.IntegerField()
@@ -64,9 +63,16 @@ class ChunkUploadResponseSerializer(serializers.Serializer):
     replica_nodes = serializers.ListField(child=serializers.CharField(), required=False)
 
 
+class SCInfoSerializer(serializers.Serializer):
+    token_acquired = serializers.BooleanField()
+    op_id = serializers.CharField()
+    acks_expected = serializers.IntegerField()
+    acks_received_or_timed_out = serializers.BooleanField()
+
+
 class FileUploadResponseSerializer(serializers.Serializer):
-    """Full response returned to client after upload is initiated."""
     file_id = serializers.UUIDField()
     filename = serializers.CharField()
     total_chunks = serializers.IntegerField()
     chunks = ChunkUploadResponseSerializer(many=True)
+    sc = SCInfoSerializer(required=False)

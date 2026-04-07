@@ -403,6 +403,12 @@ async function handleUpload() {
     let chunkTargets;
     try {
         const initResp = await realInitUpload(file, chunks, master);
+        if (initResp.sc) {
+            log(`SC token acquired: ${initResp.sc.token_acquired}`, 'info');
+            log(`SC operation id: ${initResp.sc.op_id}`, 'info');
+            log(`SC peer ACKs expected: ${initResp.sc.acks_expected}`, 'info');
+            log(`SC ACK phase complete or timed out: ${initResp.sc.acks_received_or_timed_out}`, 'info');
+        }
         chunkTargets = initResp.chunks;
 
         log(`file_id: ${initResp.file_id}`, 'ok');
