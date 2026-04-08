@@ -18,6 +18,3 @@ down:
 	docker compose -p node4 -f docker-compose.node4.yml down
 	docker compose -p node5 -f docker-compose.node5.yml down
 
-.PHONY: downv
-downv:
-	docker compose -f docker-compose.yml -f docker-compose.node2.yml down -v
