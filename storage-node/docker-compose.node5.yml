@@ -27,12 +27,14 @@ services:
     depends_on:
       minio5:
         condition: service_healthy
+    networks:
+      - cps559_network
     entrypoint: >
       /bin/sh -c "
+      set -e;
       /usr/bin/mc alias set myminio http://minio5:9000 minioadmin minioadmin123;
       /usr/bin/mc mb myminio/cpsc559-images --ignore-existing;
       /usr/bin/mc anonymous set download myminio/cpsc559-images;
-      exit 0;
       "
 
   db-node5:

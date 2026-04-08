@@ -255,11 +255,11 @@ class ElectionManager:
     # watches whether the currentl leader is still alive
     def start_monitor(self):
         def _monitor():
-            # Give the server time to finish startup before first election.
+            # Give the server time to finish startup before the first election.
             # Higher-ID servers wait less so they always start the election
-            # first. Server 3 waits 10s, server 2 waits 11s, server 1 waits 12s.
-            # By the time lower servers would start, they've already received
-            # the LEADER message from the highest alive server and skip it.
+            # first. Server 5 waits 10s, server 4 waits 11s, ..., server 1 waits 14s.
+            # By the time lower servers wake up, they've already received a
+            # COORDINATOR from the winner and skip their own election.
             max_id = max(pid for pid, _ in self.peers) if self.peers else self.server_id
             jitter = (max_id - self.server_id) * 1.0
             time.sleep(10 + jitter)

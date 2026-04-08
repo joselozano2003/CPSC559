@@ -154,6 +154,7 @@ def _retry_pending_deletes(node):
     for p in pending:
         if p.retry_count >= MAX_RETRY_COUNT:
             logger.warning(f"[EC] Giving up on pending delete chunk={p.chunk_id} on {node.name} after {p.retry_count} retries — manual investigation needed")
+            p.delete()
             continue
         try:
             resp = requests.delete(
@@ -674,6 +675,8 @@ def delete_file(request, file_id):
 
     except TimeoutError as e:
         return Response({"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
     finally:
         if token_ring_manager.has_token:
             _sc_pass_token_async(f"delete {file_id}")

@@ -227,8 +227,19 @@ export async function apiInitUpload(file: File, chunks: Blob[]): Promise<UploadI
 }
 
 export async function apiUploadChunk(presignedUrl: string, chunkBlob: Blob): Promise<void> {
-  const res = await fetch(presignedUrl, { method: 'PUT', body: chunkBlob })
-  if (!res.ok) throw new Error(`Chunk upload failed: ${res.status}`)
+  console.log(`Uploading chunk to ${presignedUrl} with size ${chunkBlob.size} bytes`)
+  let res: Response
+  try {
+    res = await fetch(presignedUrl, { method: 'PUT', body: chunkBlob })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Chunk upload network error. This is often a MinIO CORS issue: ${message}`)
+  }
+
+  if (!res.ok) {
+    const details = await res.text().catch(() => '')
+    throw new Error(`Chunk upload failed: ${res.status}${details ? ` ${details}` : ''}`)
+  }
 }
 
 export async function apiDownloadFile(fileId: string): Promise<DownloadMetadata> {

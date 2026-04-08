@@ -28,14 +28,16 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    networks:
+      - cps559_network
     entrypoint: >
       /bin/sh -c "
+      set -e;
       echo 'Configuring MinIO...';
       /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
       /usr/bin/mc mb myminio/cpsc559-images --ignore-existing;
       /usr/bin/mc anonymous set download myminio/cpsc559-images;
       echo 'MinIO configuration complete';
-      exit 0;
       "
   db2:
     image: postgres:15
