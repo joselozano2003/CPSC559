@@ -75,6 +75,7 @@ class Chunk(models.Model):
     size = models.IntegerField(null=True, blank=True)
     order = models.IntegerField()
     uploaded_at = models.DateTimeField(null=True, blank=True)
+    expected_hash = models.CharField(max_length=64, null=True, blank=True)
 
     class Meta:
         ordering = ['order']

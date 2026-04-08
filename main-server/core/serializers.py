@@ -39,6 +39,7 @@ class ChunkUploadRequestSerializer(serializers.Serializer):
     temp_chunk_id = serializers.CharField()
     order = serializers.IntegerField(min_value=0)
     size = serializers.IntegerField(min_value=1)
+    hash = serializers.CharField(max_length=64, required=False, allow_null=True)
 
 
 class FileUploadRequestSerializer(serializers.Serializer):
@@ -61,6 +62,7 @@ class ChunkUploadResponseSerializer(serializers.Serializer):
     presigned_urls = serializers.ListField(child=serializers.URLField())
     public_url = serializers.URLField()
     replica_nodes = serializers.ListField(child=serializers.CharField(), required=False)
+    expected_hash = serializers.CharField(max_length=64, required=False, allow_null=True)
 
 
 class SCInfoSerializer(serializers.Serializer):
