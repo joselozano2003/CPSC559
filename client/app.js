@@ -89,13 +89,23 @@ function log(msg, level = 'info') {
     el.scrollTop = el.scrollHeight;
 }
 
+// ========== Integrity ==========
+
+async function sha256Hex(buffer) {
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
+
 // ========== API calls ==========
 
-async function realInitUpload(file, chunks, masterUrl) {
+async function realInitUpload(file, chunks, hashes, masterUrl) {
     const chunksMetadata = chunks.map((blob, i) => ({
         temp_chunk_id: `tmp_${i}_${Date.now()}`,
         order: i,
         size: blob.size,
+        hash: hashes[i],
     }));
 
     const res = await fetchWithAuth(`${masterUrl}/files/upload/`, {
@@ -398,11 +408,18 @@ async function handleUpload() {
     renderChunks(numChunks);
     document.getElementById('btn-upload').disabled = true;
 
-    log('Step 1: sending file metadata to master…');
+    log('Step 1: hashing chunks and sending file metadata to master…');
+
+    log('  Computing SHA-256 hashes for all chunks…');
+    const hashes = await Promise.all(chunks.map(async (blob) => {
+        const buf = await blob.arrayBuffer();
+        return sha256Hex(buf);
+    }));
+    log('  Hashes computed.', 'ok');
 
     let chunkTargets;
     try {
-        const initResp = await realInitUpload(file, chunks, master);
+        const initResp = await realInitUpload(file, chunks, hashes, master);
         if (initResp.sc) {
             log(`SC token acquired: ${initResp.sc.token_acquired}`, 'info');
             log(`SC operation id: ${initResp.sc.op_id}`, 'info');
@@ -484,16 +501,27 @@ async function handleDownload() {
     const buffers = [];
 
     for (let i = 0; i < metadata.chunks.length; i++) {
-        const { presigned_url } = metadata.chunks[i];
+        const { presigned_url, expected_hash } = metadata.chunks[i];
         setChunkState(i, 'uploading');
         log(`  Downloading chunk ${i + 1}/${metadata.chunks.length}…`);
 
         try {
             const buf = await realDownloadChunk(presigned_url);
+
+            if (expected_hash) {
+                const actual = await sha256Hex(buf);
+                if (actual !== expected_hash) {
+                    log(`  chunk ${i + 1} INTEGRITY FAILURE: expected ${expected_hash} got ${actual}`, 'err');
+                    setChunkState(i, 'error');
+                    continue;
+                }
+                log(`  chunk ${i + 1} integrity OK`, 'ok');
+            }
+
             buffers.push(buf);
             setChunkState(i, 'done');
         } catch (e) {
-            log(`  chunk ${i} FAILED: ${e.message}`, 'err');
+            log(`  chunk ${i + 1} FAILED: ${e.message}`, 'err');
             setChunkState(i, 'error');
         }
     }

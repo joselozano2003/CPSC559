@@ -373,6 +373,7 @@ class FileUploadView(APIView):
                         chunk_id=real_chunk_id,
                         order=chunk_data['order'],
                         size=chunk_data['size'],
+                        expected_hash=chunk_data.get('hash'),
                     )
 
                     presigned_urls = []
@@ -404,6 +405,7 @@ class FileUploadView(APIView):
                         "presigned_urls": presigned_urls,
                         "public_url": first_public_url,
                         "replica_nodes": [node.name for node in selected_nodes],
+                        "expected_hash": chunk_data.get('hash'),
                     })
 
                 file_record.status = File.STATUS_COMPLETE
@@ -480,6 +482,7 @@ def download_file(request, file_id):
             "order": chunk.order,
             "size": chunk.size,
             "presigned_url": presigned_url,
+            "expected_hash": chunk.expected_hash,
         })
 
     return Response({
