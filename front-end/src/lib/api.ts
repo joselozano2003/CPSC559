@@ -47,6 +47,7 @@ export interface UploadInitResponse {
 export interface DownloadChunk {
   presigned_url: string
   order: number
+  expected_hash?: string | null
 }
 
 export interface DownloadMetadata {
@@ -74,6 +75,15 @@ export interface DeleteResponse {
   file_id: string
   message?: string
   chunks?: DeleteChunkInfo[]
+}
+
+// ===== Integrity =====
+
+export async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 // ===== Storage Helpers (SSR-safe) =====
@@ -209,11 +219,12 @@ export async function apiListFiles(): Promise<FileListResponse> {
   return res.json()
 }
 
-export async function apiInitUpload(file: File, chunks: Blob[]): Promise<UploadInitResponse> {
+export async function apiInitUpload(file: File, chunks: Blob[], hashes: string[]): Promise<UploadInitResponse> {
   const chunksMetadata = chunks.map((blob, i) => ({
     temp_chunk_id: `tmp_${i}_${Date.now()}`,
     order: i,
     size: blob.size,
+    hash: hashes[i],
   }))
 
   const res = await fetchWithAuth(`${getMasterUrl()}/files/upload/`, {
