@@ -30,6 +30,7 @@ import {
   formatBytes,
   getMasterUrl,
   getRefreshToken,
+  sha256Hex,
   syncAccessToken,
   type DeleteChunkInfo,
   type FileMetadata,
@@ -165,10 +166,17 @@ function DashboardPage() {
     setUploadChunkStates(Array(n).fill('waiting'))
     setUploading(true)
 
+    log('Step 1: computing SHA-256 hashes...')
+    const hashes = await Promise.all(chunks.map(async (blob) => {
+      const buf = await blob.arrayBuffer()
+      return sha256Hex(buf)
+    }))
+    log('  Hashes computed.', 'ok')
+
     let chunkTargets
     try {
-      log('Step 1: initializing upload with master...')
-      const init = await apiInitUpload(selectedFile, chunks)
+      log('Initializing upload with master...')
+      const init = await apiInitUpload(selectedFile, chunks, hashes)
       if (init.sc) {
         log(`SC token: ${init.sc.token_acquired} — op_id: ${init.sc.op_id}`, 'info')
         log(`SC acks expected: ${init.sc.acks_expected}`, 'info')
@@ -232,11 +240,22 @@ function DashboardPage() {
 
     const buffers: ArrayBuffer[] = []
     for (let i = 0; i < metadata.chunks.length; i++) {
-      const { presigned_url } = metadata.chunks[i]
+      const { presigned_url, expected_hash } = metadata.chunks[i]
       setDownloadChunkStates((prev) => { const s = [...prev]; s[i] = 'uploading'; return s })
       log(`  downloading chunk ${i + 1}/${metadata.chunks.length}...`)
       try {
         const buf = await apiDownloadChunk(presigned_url)
+
+        if (expected_hash) {
+          const actual = await sha256Hex(buf)
+          if (actual !== expected_hash) {
+            log(`  chunk ${i + 1} INTEGRITY FAILURE: hash mismatch`, 'err')
+            setDownloadChunkStates((prev: ChunkState[]) => { const s = [...prev]; s[i] = 'error'; return s })
+            continue
+          }
+          log(`  chunk ${i + 1} integrity OK`, 'ok')
+        }
+
         buffers.push(buf)
         setDownloadChunkStates((prev) => { const s = [...prev]; s[i] = 'done'; return s })
       } catch (e: any) {
