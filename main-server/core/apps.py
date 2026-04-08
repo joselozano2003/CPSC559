@@ -16,9 +16,3 @@ class CoreConfig(AppConfig):
             return
         from .election import election_manager
         election_manager.start_monitor()    # start the monitor which will run the leader election algorithm in the background.
-
-        # Seed the SC token into server 1 on startup so the token ring is
-        # immediately operational without manual intervention after restarts.
-        if int(os.environ.get('SERVER_ID', 0)) == 1:
-            from .consistency import token_ring_manager
-            token_ring_manager.receive_token()

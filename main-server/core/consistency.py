@@ -14,14 +14,14 @@ class TokenRingManager:
         self.peers = self._parse_peers()
 
         self.has_token = False
-        self._token_in_use = False   # True while an operation holds the token
+        # self._token_in_use = False   # True while an operation holds the token
         self.token_condition = threading.Condition()
 
         self.pending_acks = {}
         self.pending_ack_condition = threading.Condition()
 
         # Keep the token circulating so it doesn't get stuck on an idle server.
-        threading.Thread(target=self._idle_token_circulator, daemon=True).start()
+        # threading.Thread(target=self._idle_token_circulator, daemon=True).start()
 
     def _parse_peers(self):
         peers = []
@@ -53,36 +53,36 @@ class TokenRingManager:
     # Token management
     # ------------------------------------------------------------------
 
-    def _idle_token_circulator(self):
-        """
-        Pass the token to the next peer whenever this server holds it but
-        no operation is actively using it.  This prevents the token from
-        stalling on a server that receives no incoming requests, which
-        would cause every other server's wait_for_token to time out.
-        """
-        while True:
-            time.sleep(0.3)
-            with self.token_condition:
-                should_pass = self.has_token and not self._token_in_use
-            if should_pass:
-                logger.info(f"[SC] Server {self.server_id} circulating idle token")
-                self.pass_token()
+    # def _idle_token_circulator(self):
+    #     """
+    #     Pass the token to the next peer whenever this server holds it but
+    #     no operation is actively using it.  This prevents the token from
+    #     stalling on a server that receives no incoming requests, which
+    #     would cause every other server's wait_for_token to time out.
+    #     """
+    #     while True:
+    #         time.sleep(0.3)
+    #         with self.token_condition:
+    #             should_pass = self.has_token and not self._token_in_use
+    #         if should_pass:
+    #             logger.info(f"[SC] Server {self.server_id} circulating idle token")
+    #             self.pass_token()
 
     def wait_for_token(self, timeout=None):
         with self.token_condition:
             if not self.has_token:
                 self.token_condition.wait(timeout=timeout)
-            if self.has_token:
-                self._token_in_use = True   # operation is now holding the token
+            # if self.has_token:
+            #     self._token_in_use = True   # operation is now holding the token
             return self.has_token
 
     def receive_token(self):
         with self.token_condition:
             if self.has_token:
                 logger.warning(f"[SC] Server {self.server_id} already has token — ignoring duplicate")
-                return
+                # return
             self.has_token = True
-            self._token_in_use = False
+            # self._token_in_use = False
             self.token_condition.notify_all()
         logger.info(f"[SC] Server {self.server_id} received token")
 
@@ -102,7 +102,7 @@ class TokenRingManager:
                 requests.post(f"{next_addr}/token/receive/", timeout=2)
                 with self.token_condition:
                     self.has_token = False
-                    self._token_in_use = False
+                    # self._token_in_use = False
                 logger.info(f"[SC] Server {self.server_id} passed token to server {next_id} at {next_addr}")
                 return
             except Exception as e:

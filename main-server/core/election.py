@@ -263,8 +263,10 @@ class ElectionManager:
             max_id = max(pid for pid, _ in self.peers) if self.peers else self.server_id
             jitter = (max_id - self.server_id) * 1.0
             time.sleep(10 + jitter)
-            # Kick off an initial election so the cluster elects a leader
-            threading.Thread(target=self.start_election, daemon=True).start()
+            # Kick off an initial election only if no leader was established
+            # during the startup delay (e.g. received a COORDINATOR already).
+            if self.leader_id is None:
+                threading.Thread(target=self.start_election, daemon=True).start()
 
             while True:
                 time.sleep(5)
