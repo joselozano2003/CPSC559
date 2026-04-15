@@ -1,9 +1,11 @@
 version: '3.8'
 
 # ============================================================
-# Storage Node 5 — Machine IP: 192.168.1.105
-# Replace 192.168.1.100 with the actual IP of the main-server machine (nginx).
-# Replace 192.168.1.105 with the actual IP of this machine.
+# Storage Node 5 — runs on Machine 4 (IP: 192.168.1.103), port 6000
+# Start with: docker compose -f docker-compose.node5.yml up --build
+#
+# Replace 192.168.1.100 with Machine 1's actual IP (main-server + nginx).
+# Replace 192.168.1.103 with Machine 4's actual IP.
 # ============================================================
 
 services:
@@ -24,7 +26,7 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - storage_net
+      - storage_net5
 
   createbuckets5:
     image: minio/mc:latest
@@ -32,7 +34,7 @@ services:
       minio5:
         condition: service_healthy
     networks:
-      - storage_net
+      - storage_net5
     entrypoint: >
       /bin/sh -c "
       set -e;
@@ -57,7 +59,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - storage_net
+      - storage_net5
 
   storage-node5:
     build: .
@@ -68,17 +70,17 @@ services:
     environment:
       - DATABASE_URL=postgresql://hello_flask:hello_password@db-node5:5432/flask_db
       - FLASK_DEBUG=1
-      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with main-server machine IP
+      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with Machine 1's IP
       - BUCKET_ACCESS_KEY_ID=minioadmin
       - BUCKET_SECRET_ACCESS_KEY=minioadmin123
       - BUCKET_ENDPOINT_URL=http://minio5:9000
       - BUCKET_NAME=cpsc559-images
-      - MINIO_PUBLIC_HOST=192.168.1.105:9000  # <-- replace with this machine's IP
+      - MINIO_PUBLIC_HOST=192.168.1.103:9000  # <-- replace with this machine's IP
       - NODE_NAME=storage-node-5
-      - NODE_ADDRESS=http://192.168.1.105:6000  # <-- replace with this machine's IP
+      - NODE_ADDRESS=http://192.168.1.103:6000  # <-- replace with this machine's IP
       - INTERNAL_SECRET=cps559-internal-key
     networks:
-      - storage_net
+      - storage_net5
     depends_on:
       db-node5:
         condition: service_healthy
@@ -90,5 +92,5 @@ volumes:
   minio5_data:
 
 networks:
-  storage_net:
+  storage_net5:
     driver: bridge

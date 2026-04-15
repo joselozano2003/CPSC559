@@ -1,9 +1,12 @@
 version: '3.8'
 
 # ============================================================
-# Storage Node 2 — Machine IP: 192.168.1.102
-# Replace 192.168.1.100 with the actual IP of the main-server machine (nginx).
-# Replace 192.168.1.102 with the actual IP of this machine.
+# Storage Node 2 — runs on Machine 2 (IP: 192.168.1.101), port 6001
+# Also runs alongside node 1 on this machine.
+# Start with: docker compose -p node2 -f docker-compose.node2.yml up --build
+#
+# Replace 192.168.1.100 with Machine 1's actual IP (main-server + nginx).
+# Replace 192.168.1.101 with Machine 2's actual IP.
 # ============================================================
 
 services:
@@ -11,8 +14,8 @@ services:
   minio2:
     image: minio/minio:latest
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9002:9000"
+      - "9003:9001"
     volumes:
       - minio2_data:/data
     environment:
@@ -25,7 +28,7 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - storage_net
+      - storage_net2
 
   createbuckets2:
     image: minio/mc:latest
@@ -33,7 +36,7 @@ services:
       minio2:
         condition: service_healthy
     networks:
-      - storage_net
+      - storage_net2
     entrypoint: >
       /bin/sh -c "
       set -e;
@@ -53,35 +56,35 @@ services:
       - POSTGRES_PASSWORD=hello_password
       - POSTGRES_DB=flask_db
     ports:
-      - "5432:5432"
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hello_flask"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - storage_net
+      - storage_net2
 
   storage-node2:
     build: .
     volumes:
       - .:/app
     ports:
-      - "6000:6000"
+      - "6001:6000"
     environment:
       - DATABASE_URL=postgresql://hello_flask:hello_password@db-node2:5432/flask_db
       - FLASK_DEBUG=1
-      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with main-server machine IP
+      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with Machine 1's IP
       - BUCKET_ACCESS_KEY_ID=minioadmin
       - BUCKET_SECRET_ACCESS_KEY=minioadmin123
       - BUCKET_ENDPOINT_URL=http://minio2:9000
       - BUCKET_NAME=cpsc559-images
-      - MINIO_PUBLIC_HOST=192.168.1.102:9000  # <-- replace with this machine's IP
+      - MINIO_PUBLIC_HOST=192.168.1.101:9002  # <-- replace with this machine's IP
       - NODE_NAME=storage-node-2
-      - NODE_ADDRESS=http://192.168.1.102:6000  # <-- replace with this machine's IP
+      - NODE_ADDRESS=http://192.168.1.101:6001  # <-- replace with this machine's IP
       - INTERNAL_SECRET=cps559-internal-key
     networks:
-      - storage_net
+      - storage_net2
     depends_on:
       db-node2:
         condition: service_healthy
@@ -93,5 +96,5 @@ volumes:
   minio2_data:
 
 networks:
-  storage_net:
+  storage_net2:
     driver: bridge

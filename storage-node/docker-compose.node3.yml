@@ -1,9 +1,12 @@
 version: '3.8'
 
 # ============================================================
-# Storage Node 3 — Machine IP: 192.168.1.103
-# Replace 192.168.1.100 with the actual IP of the main-server machine (nginx).
-# Replace 192.168.1.103 with the actual IP of this machine.
+# Storage Node 3 — runs on Machine 3 (IP: 192.168.1.102), port 6000
+# Also runs alongside node 4 on this machine.
+# Start with: docker compose -p node3 -f docker-compose.node3.yml up --build
+#
+# Replace 192.168.1.100 with Machine 1's actual IP (main-server + nginx).
+# Replace 192.168.1.102 with Machine 3's actual IP.
 # ============================================================
 
 services:
@@ -24,7 +27,7 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - storage_net
+      - storage_net3
 
   createbuckets3:
     image: minio/mc:latest
@@ -32,7 +35,7 @@ services:
       minio3:
         condition: service_healthy
     networks:
-      - storage_net
+      - storage_net3
     entrypoint: >
       /bin/sh -c "
       set -e;
@@ -50,14 +53,14 @@ services:
       - POSTGRES_PASSWORD=hello_password
       - POSTGRES_DB=flask_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hello_flask"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - storage_net
+      - storage_net3
 
   storage-node3:
     build: .
@@ -68,17 +71,17 @@ services:
     environment:
       - DATABASE_URL=postgresql://hello_flask:hello_password@db-node3:5432/flask_db
       - FLASK_DEBUG=1
-      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with main-server machine IP
+      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with Machine 1's IP
       - BUCKET_ACCESS_KEY_ID=minioadmin
       - BUCKET_SECRET_ACCESS_KEY=minioadmin123
       - BUCKET_ENDPOINT_URL=http://minio3:9000
       - BUCKET_NAME=cpsc559-images
-      - MINIO_PUBLIC_HOST=192.168.1.103:9000  # <-- replace with this machine's IP
+      - MINIO_PUBLIC_HOST=192.168.1.102:9000  # <-- replace with this machine's IP
       - NODE_NAME=storage-node-3
-      - NODE_ADDRESS=http://192.168.1.103:6000  # <-- replace with this machine's IP
+      - NODE_ADDRESS=http://192.168.1.102:6000  # <-- replace with this machine's IP
       - INTERNAL_SECRET=cps559-internal-key
     networks:
-      - storage_net
+      - storage_net3
     depends_on:
       db-node3:
         condition: service_healthy
@@ -90,5 +93,5 @@ volumes:
   minio3_data:
 
 networks:
-  storage_net:
+  storage_net3:
     driver: bridge

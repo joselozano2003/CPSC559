@@ -1,9 +1,12 @@
 version: '3.8'
 
 # ============================================================
-# Storage Node 1 — Machine IP: 192.168.1.101
-# Replace 192.168.1.100 with the actual IP of the main-server machine (nginx).
-# Replace 192.168.1.101 with the actual IP of this machine.
+# Storage Node 1 — runs on Machine 2 (IP: 192.168.1.101), port 6000
+# Also runs alongside node 2 on this machine.
+# Start with: docker compose -p node1 -f docker-compose.yml up --build
+#
+# Replace 192.168.1.100 with Machine 1's actual IP (main-server + nginx).
+# Replace 192.168.1.101 with Machine 2's actual IP.
 # ============================================================
 
 services:
@@ -43,6 +46,7 @@ services:
       /usr/bin/mc anonymous set download myminio/cpsc559-images;
       echo 'MinIO configuration complete';
       "
+
   db2:
     image: postgres:15
     volumes:
@@ -70,7 +74,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://hello_flask:hello_password@db2:5432/flask_db
       - FLASK_DEBUG=1
-      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with main-server machine IP
+      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with Machine 1's IP
       - BUCKET_ACCESS_KEY_ID=minioadmin
       - BUCKET_SECRET_ACCESS_KEY=minioadmin123
       - BUCKET_ENDPOINT_URL=http://minio:9000
