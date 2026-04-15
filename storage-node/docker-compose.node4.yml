@@ -1,11 +1,17 @@
 version: '3.8'
 
+# ============================================================
+# Storage Node 4 — Machine IP: 192.168.1.104
+# Replace 192.168.1.100 with the actual IP of the main-server machine (nginx).
+# Replace 192.168.1.104 with the actual IP of this machine.
+# ============================================================
+
 services:
   minio4:
     image: minio/minio:latest
     ports:
-      - "9006:9000"
-      - "9007:9001"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio4_data:/data
     environment:
@@ -18,9 +24,7 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      cps559_network:
-        aliases:
-          - minio4
+      - storage_net
 
   createbuckets4:
     image: minio/mc:latest
@@ -28,7 +32,7 @@ services:
       minio4:
         condition: service_healthy
     networks:
-      - cps559_network
+      - storage_net
     entrypoint: >
       /bin/sh -c "
       set -e;
@@ -46,35 +50,35 @@ services:
       - POSTGRES_PASSWORD=hello_password
       - POSTGRES_DB=flask_db
     ports:
-      - "5436:5432"
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hello_flask"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - cps559_network
+      - storage_net
 
   storage-node4:
     build: .
     volumes:
       - .:/app
     ports:
-      - "6003:6000"
+      - "6000:6000"
     environment:
       - DATABASE_URL=postgresql://hello_flask:hello_password@db-node4:5432/flask_db
       - FLASK_DEBUG=1
-      - MAIN_SERVER_URL=http://nginx
+      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with main-server machine IP
       - BUCKET_ACCESS_KEY_ID=minioadmin
       - BUCKET_SECRET_ACCESS_KEY=minioadmin123
       - BUCKET_ENDPOINT_URL=http://minio4:9000
       - BUCKET_NAME=cpsc559-images
-      - MINIO_PUBLIC_HOST=localhost:9006
+      - MINIO_PUBLIC_HOST=192.168.1.104:9000  # <-- replace with this machine's IP
       - NODE_NAME=storage-node-4
-      - NODE_ADDRESS=http://storage-node4:6000
+      - NODE_ADDRESS=http://192.168.1.104:6000  # <-- replace with this machine's IP
       - INTERNAL_SECRET=cps559-internal-key
     networks:
-      - cps559_network
+      - storage_net
     depends_on:
       db-node4:
         condition: service_healthy
@@ -86,5 +90,5 @@ volumes:
   minio4_data:
 
 networks:
-  cps559_network:
-    external: true
+  storage_net:
+    driver: bridge
