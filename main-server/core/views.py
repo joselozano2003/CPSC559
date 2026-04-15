@@ -29,7 +29,7 @@ from .consistency import token_ring_manager
 import logging
 logger = logging.getLogger(__name__)
 
-HEARTBEAT_TIMEOUT = 90  # seconds
+HEARTBEAT_TIMEOUT = 30  # seconds
 REPLICATION_FACTOR = 5
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "cps559-internal-key")
 

@@ -10,7 +10,7 @@ from .models import Chunk
 _main_server_url = os.environ.get("MAIN_SERVER_URL", "http://main-server:8000")
 NODE_NAME = os.environ.get("NODE_NAME", "storage-node-1")
 NODE_ADDRESS = os.environ.get("NODE_ADDRESS", "http://storage-node:6000")
-HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "30"))
+HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", "10"))
 
 
 def send_heartbeat():
