@@ -121,8 +121,9 @@ class ElectionManager:
         self.leader_id = self.server_id
         self.leader_address = self.own_address
         self._last_leader_change = time.time()
-        token_ring_manager.receive_token()
-        logger.info(f"[SC] Server {self.server_id} seeded token after becoming leader")
+        new_epoch = int(time.time())   # monotonically increasing; leader's wall clock is fine
+        token_ring_manager.seed_token(new_epoch)
+        logger.info(f"[SC] Server {self.server_id} seeded token at epoch={new_epoch}")
 
         # Broadcast COORDINATOR to all other peers
         for _, addr in self._all_other_peers():

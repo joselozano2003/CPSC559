@@ -14,6 +14,7 @@ class TokenRingManager:
         self.peers = self._parse_peers()
 
         self.has_token = False
+        self.token_epoch = 0 
         self._token_in_use = False   # True while an operation holds the token
         self.token_condition = threading.Condition()
 
@@ -76,15 +77,33 @@ class TokenRingManager:
                 self._token_in_use = True   # operation is now holding the token
             return self.has_token
 
-    def receive_token(self):
+    def receive_token(self, epoch=None):
         with self.token_condition:
             if self.has_token:
                 logger.warning(f"[SC] Server {self.server_id} already has token — ignoring duplicate")
                 return
+            # Reject tokens from a stale epoch
+            if epoch is not None and epoch < self.token_epoch:
+                logger.warning(
+                    f"[SC] Server {self.server_id} dropping stale token "
+                    f"(token epoch={epoch}, current epoch={self.token_epoch})"
+                )
+                return
+            if epoch is not None:
+                self.token_epoch = epoch
             self.has_token = True
             self._token_in_use = False
             self.token_condition.notify_all()
-        logger.info(f"[SC] Server {self.server_id} received token")
+        logger.info(f"[SC] Server {self.server_id} received token (epoch={self.token_epoch})")
+
+    def seed_token(self, new_epoch):
+        """Called only by _declare_victory. Bumps the epoch and takes ownership."""
+        with self.token_condition:
+            self.token_epoch = new_epoch
+            self.has_token = True
+            self._token_in_use = False
+            self.token_condition.notify_all()
+        logger.info(f"[SC] Server {self.server_id} seeded token at epoch={new_epoch}")
 
     def pass_token(self):
         ids = [pid for pid, _ in self.peers]
@@ -99,7 +118,7 @@ class TokenRingManager:
             next_id, next_addr = self.peers[next_i]
 
             try:
-                requests.post(f"{next_addr}/token/receive/", timeout=2)
+                requests.post(f"{next_addr}/token/receive/", json={"epoch": self.token_epoch}, timeout=2)
                 with self.token_condition:
                     self.has_token = False
                     self._token_in_use = False

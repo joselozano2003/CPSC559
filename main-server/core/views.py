@@ -687,7 +687,8 @@ def delete_file(request, file_id):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def receive_token(request):
-    token_ring_manager.receive_token()
+    epoch = request.data.get("epoch")
+    token_ring_manager.receive_token(epoch=int(epoch) if epoch is not None else None)
     return Response({"ok": True})
 
 @api_view(["POST"])
