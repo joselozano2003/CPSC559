@@ -9,7 +9,7 @@ export const Route = createFileRoute('/login')({ component: LoginPage })
 
 function LoginPage() {
   const router = useRouter()
-  const [masterUrl, setMasterUrlState] = useState('http://localhost')
+  const [masterUrl, setMasterUrlState] = useState('http://localhost:8080')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -165,7 +165,7 @@ function LoginPage() {
                 value={masterUrl}
                 onChange={(e) => setMasterUrlState(e.target.value)}
                 className="mt-1.5 font-mono text-sm h-10 border-gray-200 focus-visible:ring-blue-500/30 focus-visible:border-blue-400"
-                placeholder="http://localhost"
+                placeholder="http://localhost:8080"
               />
             </div>
 

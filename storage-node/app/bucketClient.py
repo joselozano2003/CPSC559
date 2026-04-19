@@ -107,6 +107,14 @@ class BucketClient:
             # Production BUCKET Bucket
             return f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{file_key}"
     
+    def upload_bytes(self, file_key: str, data: bytes) -> bool:
+        try:
+            self.s3_client.put_object(Bucket=self.bucket_name, Key=file_key, Body=data)
+            return True
+        except ClientError as e:
+            print(f"Error uploading bytes: {e}")
+            return False
+
     def delete_file(self, file_key: str) -> bool:
         """
         Delete a file from Bucket
