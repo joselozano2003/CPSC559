@@ -1,5 +1,14 @@
 version: '3.8'
 
+# ============================================================
+# Storage Node 1 — runs on Machine 2 (IP: 192.168.1.101), port 6000
+# Also runs alongside node 2 on this machine.
+# Start with: docker compose -p node1 -f docker-compose.yml up --build
+#
+# Replace 192.168.1.100 with Machine 1's actual IP (main-server + nginx).
+# Replace 192.168.1.101 with Machine 2's actual IP.
+# ============================================================
+
 services:
 
   minio:
@@ -19,9 +28,7 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      cps559_network:
-        aliases:
-          - minio
+      - storage_net
 
   createbuckets:
     image: minio/mc:latest
@@ -29,7 +36,7 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - cps559_network
+      - storage_net
     entrypoint: >
       /bin/sh -c "
       set -e;
@@ -39,6 +46,7 @@ services:
       /usr/bin/mc anonymous set download myminio/cpsc559-images;
       echo 'MinIO configuration complete';
       "
+
   db2:
     image: postgres:15
     volumes:
@@ -55,7 +63,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - cps559_network
+      - storage_net
 
   storage-node:
     build: .
@@ -66,17 +74,17 @@ services:
     environment:
       - DATABASE_URL=postgresql://hello_flask:hello_password@db2:5432/flask_db
       - FLASK_DEBUG=1
-      - MAIN_SERVER_URL=http://nginx
+      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with Machine 1's IP
       - BUCKET_ACCESS_KEY_ID=minioadmin
       - BUCKET_SECRET_ACCESS_KEY=minioadmin123
       - BUCKET_ENDPOINT_URL=http://minio:9000
       - BUCKET_NAME=cpsc559-images
-      - MINIO_PUBLIC_HOST=localhost:9000
+      - MINIO_PUBLIC_HOST=192.168.1.101:9000  # <-- replace with this machine's IP
       - NODE_NAME=storage-node-1
-      - NODE_ADDRESS=http://storage-node:6000
+      - NODE_ADDRESS=http://192.168.1.101:6000  # <-- replace with this machine's IP
       - INTERNAL_SECRET=cps559-internal-key
     networks:
-      - cps559_network
+      - storage_net
     depends_on:
       db2:
         condition: service_healthy
@@ -88,5 +96,5 @@ volumes:
   minio_data:
 
 networks:
-  cps559_network:
-    external: true
+  storage_net:
+    driver: bridge
