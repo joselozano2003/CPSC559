@@ -241,7 +241,11 @@ export async function apiUploadChunk(presignedUrl: string, chunkBlob: Blob): Pro
   console.log(`Uploading chunk to ${presignedUrl} with size ${chunkBlob.size} bytes`)
   let res: Response
   try {
-    res = await fetch(presignedUrl, { method: 'PUT', body: chunkBlob })
+    res = await fetch(presignedUrl, {
+      method: 'PUT',
+      body: chunkBlob,
+      headers: { 'ngrok-skip-browser-warning': 'true' },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Chunk upload network error. This is often a MinIO CORS issue: ${message}`)
