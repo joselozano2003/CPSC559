@@ -110,7 +110,6 @@ def get_chunk(chunk_id):
 
 
 @bp.route("/chunk/<chunk_id>/data", methods=["GET"])
-@require_jwt
 def stream_chunk_data(chunk_id):
     chunk = Chunk.query.filter_by(chunk_id=chunk_id).first()
     if not chunk:
