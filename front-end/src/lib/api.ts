@@ -264,7 +264,7 @@ export async function apiDownloadFile(fileId: string): Promise<DownloadMetadata>
 }
 
 export async function apiDownloadChunk(presignedUrl: string): Promise<ArrayBuffer> {
-  const res = await fetch(presignedUrl)
+  const res = await fetch(presignedUrl, { headers: { 'ngrok-skip-browser-warning': 'true' } })
   if (!res.ok) throw new Error(`Chunk download failed: ${res.status}`)
   return res.arrayBuffer()
 }
