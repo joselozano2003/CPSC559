@@ -19,6 +19,6 @@ services:
       context: ./proxy
       dockerfile: Dockerfile12
     ports:
-      - "7000:7000"
+      - "7001:7001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
