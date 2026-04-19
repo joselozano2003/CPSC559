@@ -74,14 +74,14 @@ services:
     environment:
       - DATABASE_URL=postgresql://hello_flask:hello_password@db2:5432/flask_db
       - FLASK_DEBUG=1
-      - MAIN_SERVER_URL=http://192.168.1.100  # <-- replace with Machine 1's IP
+      - MAIN_SERVER_URL=https://shine-preachy-crystal.ngrok-free.dev
       - BUCKET_ACCESS_KEY_ID=minioadmin
       - BUCKET_SECRET_ACCESS_KEY=minioadmin123
       - BUCKET_ENDPOINT_URL=http://minio:9000
       - BUCKET_NAME=cpsc559-images
       - MINIO_PUBLIC_HOST=192.168.1.101:9000  # <-- replace with this machine's IP
       - NODE_NAME=storage-node-1
-      - NODE_ADDRESS=http://192.168.1.101:6000  # <-- replace with this machine's IP
+      - NODE_ADDRESS=https://unplanted-parasite-matchbook.ngrok-free.dev/node1
       - INTERNAL_SECRET=cps559-internal-key
     networks:
       - storage_net
