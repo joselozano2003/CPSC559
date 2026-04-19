@@ -1,0 +1,24 @@
+version: "3.9"
+
+# ============================================================
+# Proxy for Teammate B — nodes 3 & 4 (ports 6000 and 6001).
+# Routes /node3/ -> 6000, /node4/ -> 6001.
+#
+# Run after starting both storage nodes:
+#   docker compose -p node3 -f docker-compose.node3.yml up --build -d
+#   docker compose -p node4 -f docker-compose.node4.yml up --build -d
+#   docker compose -f docker-compose.proxy34.yml up --build -d
+#
+# Then expose via ngrok:
+#   ngrok http 7000
+# ============================================================
+
+services:
+  storage-proxy:
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile34
+    ports:
+      - "7000:7000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
