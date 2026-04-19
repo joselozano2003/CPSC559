@@ -66,12 +66,32 @@ def put_chunk():
     db.session.add(chunk)
     db.session.commit()
 
+    upload_url = f"{NODE_ADDRESS}/chunk/{chunk_id}/data"
+
     return jsonify({
         "chunk_id": chunk_id,
-        "presigned_url": presigned_url,
+        "presigned_url": upload_url,
         "public_url": public_url,
         "success": True,
     }), 201
+
+
+@bp.route("/chunk/<chunk_id>/data", methods=["PUT"])
+def upload_chunk_data(chunk_id):
+    chunk = Chunk.query.filter_by(chunk_id=chunk_id).first()
+    if not chunk:
+        return jsonify({"error": "Chunk not found"}), 404
+
+    data = request.get_data()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    bucket_client = BucketClient()
+    ok = bucket_client.upload_bytes(chunk.minio_object_key, data)
+    if not ok:
+        return jsonify({"error": "Failed to upload to storage"}), 500
+
+    return '', 200
 
 @bp.route("/chunk/<chunk_id>", methods=["GET"])
 @require_jwt

@@ -106,7 +106,7 @@ function storeDel(key: string): void {
 // ===== Auth Helpers =====
 
 export function getMasterUrl(): string {
-  return store('masterUrl') || 'http://localhost'
+  return store('masterUrl') || 'http://localhost:8080'
 }
 
 export function setMasterUrl(url: string): void {

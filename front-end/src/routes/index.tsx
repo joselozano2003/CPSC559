@@ -66,7 +66,7 @@ function DashboardPage() {
   }, [])
 
   // Server URL (client-only read)
-  const [masterUrl, setMasterUrlDisplay] = useState('http://localhost')
+  const [masterUrl, setMasterUrlDisplay] = useState('http://localhost:8080')
   useEffect(() => { setMasterUrlDisplay(getMasterUrl()) }, [])
 
   // Files
