@@ -1,7 +1,7 @@
 import threading
 import os
 import requests as req_lib
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response, stream_with_context
 from .auth import require_jwt, require_jwt_or_internal
 from .bucketClient import BucketClient
 from .extensions import db
@@ -100,17 +100,35 @@ def get_chunk(chunk_id):
     if not chunk:
         return jsonify({"error": "Chunk not found"}), 404
 
-    bucket_client = BucketClient()
-    presigned_url = bucket_client.generate_presigned_download_url(chunk.minio_object_key)
-
-    if not presigned_url:
-        return jsonify({"error": "Failed to generate download URL"}), 500
+    download_url = f"{NODE_ADDRESS}/chunk/{chunk_id}/data"
 
     return jsonify({
         "chunk_id": chunk_id,
-        "presigned_url": presigned_url,
+        "presigned_url": download_url,
         "success": True
     }), 200
+
+
+@bp.route("/chunk/<chunk_id>/data", methods=["GET"])
+@require_jwt
+def stream_chunk_data(chunk_id):
+    chunk = Chunk.query.filter_by(chunk_id=chunk_id).first()
+    if not chunk:
+        return jsonify({"error": "Chunk not found"}), 404
+
+    bucket_client = BucketClient()
+    obj = bucket_client.get_object(chunk.minio_object_key)
+    if not obj:
+        return jsonify({"error": "Failed to retrieve chunk from storage"}), 500
+
+    def generate():
+        for chunk_data in obj['Body'].iter_chunks(chunk_size=8192):
+            yield chunk_data
+
+    return Response(
+        stream_with_context(generate()),
+        content_type='application/octet-stream'
+    )
 
 @bp.route("/set-leader", methods=["POST"])
 def set_leader():
