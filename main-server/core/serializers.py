@@ -66,10 +66,10 @@ class ChunkUploadResponseSerializer(serializers.Serializer):
 
 
 class SCInfoSerializer(serializers.Serializer):
-    token_acquired = serializers.BooleanField()
-    op_id = serializers.CharField()
-    acks_expected = serializers.IntegerField()
-    acks_received_or_timed_out = serializers.BooleanField()
+        seq_no = serializers.IntegerField()
+        op_id = serializers.CharField()
+        quorum_achieved = serializers.BooleanField()
+        replicas_contacted = serializers.IntegerField()
 
 
 class FileUploadResponseSerializer(serializers.Serializer):

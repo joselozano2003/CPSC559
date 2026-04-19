@@ -114,3 +114,12 @@ class PendingDelete(models.Model):
 
     class Meta:
         unique_together = ('storage_node', 'chunk_id')
+
+
+class ReplicatedOperation(models.Model):
+    seq_no = models.BigIntegerField(unique=True)
+    op_id = models.UUIDField(unique=True)
+    op_type = models.CharField(max_length=64)
+    payload = models.JSONField()
+    status = models.CharField(max_length=32, default="pending")  # pending/replicated/committed/applied
+    created_at = models.DateTimeField(auto_now_add=True)

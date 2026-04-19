@@ -25,7 +25,8 @@ from django.db import transaction
 from datetime import timedelta
 from .models import File, Chunk, StorageNode, ChunkReplica, PendingDelete
 from .serializers import FileUploadRequestSerializer, FileUploadResponseSerializer
-from .consistency import token_ring_manager
+from .consistency import consistency_manager
+import time
 import logging
 logger = logging.getLogger(__name__)
 
@@ -93,54 +94,162 @@ def health_check(request):
             'database': 'disconnected',
             'error': str(e)
         }, status=503)
+
+
+def _get_leader_address_if_not_self():
+    from .election import election_manager
+    this_server_id = int(os.environ.get("SERVER_ID", 1))
+
+    if election_manager.leader_id is None:
+        raise RuntimeError("No leader elected yet")
+
+    if election_manager.leader_id == this_server_id:
+        return None
+
+    return election_manager.leader_address
+
+# helper to detect whether this server is leader, and get the leader's address:
+def _leader_forward_address():
+    from .election import election_manager
+
+    this_server_id = int(os.environ.get("SERVER_ID", 1))
+
+    if election_manager.leader_id is None:
+        raise RuntimeError("No leader elected yet")
+
+    if election_manager.leader_id == this_server_id:
+        return None  # this server is leader
+
+    return election_manager.leader_address
+
+# helper to forward a request to the leader and return the response, 
+# or None if this server is the leader and caller
+def _forward_to_leader(request, path, method="POST"):
+    leader_address = _leader_forward_address()
+    if leader_address is None:
+        return None  # caller should handle locally
+
+    headers = {}
+    auth = request.headers.get("Authorization")
+    if auth:
+        headers["Authorization"] = auth
+    if request.content_type:
+        headers["Content-Type"] = request.content_type
+
+    url = f"{leader_address}{path}"
+
+    if method == "POST":
+        resp = requests.post(url, json=request.data, headers=headers, timeout=60)
+    elif method == "DELETE":
+        resp = requests.delete(url, headers=headers, timeout=60)
+    else:
+        raise ValueError(f"Unsupported forward method: {method}")
+
+    try:
+        body = resp.json()
+    except Exception:
+        body = {"error": resp.text}
+
+    return Response(body, status=resp.status_code)
+
+# ---------------------------------------------------------------------------
+# Sequential Consistency
+# ---------------------------------------------------------------------------
+
+def _sc_replicate_and_commit(op_type, payload, token_timeout=15, ack_timeout=10):
+    """
+    Leader-side sequential consistency wrapper:
+    1. append ordered log entry
+    2. replicate entry to followers
+    3. wait for quorum ACKs
+    4. mark committed
+    Returns: (entry, peer_list, quorum_ok)
+    """
+    entry = consistency_manager.append_log_entry(op_type=op_type, payload=payload)
+    peer_list = consistency_manager.other_peers()
+
+    # quorum = leader + majority of followers
+    # majority = floor(n/2) + 1
+    total_nodes = len(consistency_manager.peers)
+    majority = (total_nodes // 2) + 1
+
+    # followers needed, since leader counts as already having an entry
+    followers_acks_needed = max(0, majority - 1) # max in case of 1 server with no followers
+
+    consistency_manager.create_pending_ack(entry["seq_no"], len(peer_list))
+    consistency_manager.replicate_to_followers(entry)
+
+    quorum_ok = True
+    if followers_acks_needed > 0:
+        quorum_ok = consistency_manager.wait_for_quorum(
+            seq_no=entry["seq_no"],
+            quorum_size=followers_acks_needed,
+            timeout=ack_timeout,
+        )
+
+    if not quorum_ok:
+        raise TimeoutError(
+            f"Timed out waiting for quorum for seq={entry['seq_no']} op_id={entry['op_id']}"
+        )
     
-def _sc_begin(op_type, payload, token_timeout=15, ack_timeout=10):
-    """
-    Begin an SC-wrapped operation:
-    1. wait for token
-    2. broadcast apply to peers
-    3. wait for ACKs (or timeout)
-    Returns: (op_id, peer_list, ack_ok)
-    """
-    op_id = str(uuid.uuid4())
-    peer_list = token_ring_manager.other_peers()
-
-    got_token = token_ring_manager.wait_for_token(timeout=token_timeout)
-    if not got_token:
-        raise TimeoutError("Timed out waiting for SC token")
-
-    logger.info(f"[SC] Server {token_ring_manager.server_id} acquired token for {op_type} op_id={op_id}")
-
-    token_ring_manager.create_pending_ack(op_id, len(peer_list))
-
-    for _, addr in peer_list:
-        try:
-            requests.post(
-                f"{addr}/sc/apply/",
-                json={
-                    "op_id": op_id,
-                    "op_type": op_type,
-                    "payload": payload,
-                    "sender_address": token_ring_manager.own_address,
-                },
-                timeout=3,
-            )
-        except Exception as e:
-            logger.warning(f"[SC] Failed to send {op_type} apply to {addr}: {e}")
-
-    ack_ok = token_ring_manager.wait_for_all_acks(op_id, timeout=ack_timeout)
-    if not ack_ok:
-        logger.warning(f"[SC] Timed out waiting for all ACKs for {op_type} op_id={op_id}")
-
-    return op_id, peer_list, ack_ok
+    consistency_manager.mark_committed(entry["seq_no"])
+    return entry, peer_list, quorum_ok
 
 
-def _sc_pass_token_async(context):
-    threading.Thread(
-        target=token_ring_manager.pass_token,
-        daemon=True,
-    ).start()
-    logger.info(f"[SC] Server {token_ring_manager.server_id} scheduled token pass after {context}")
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def sc_replicate(request):
+    seq_no = request.data.get("seq_no")
+    op_id = request.data.get("op_id")
+    op_type = request.data.get("op_type")
+    payload = request.data.get("payload", {})
+    leader_address = request.data.get("leader_address")
+
+    if seq_no is None or not op_id or not op_type or not leader_address:
+        return Response({"error": "seq_no, op_id, op_type, leader_address required"}, status=400)
+
+    seq_no = int(seq_no)
+
+    logger.info(
+        f"[SC] Follower received replicate seq={seq_no} op_id={op_id} op_type={op_type}"
+    )
+
+    # store entry locally so follower knows ordering
+    consistency_manager.log[seq_no] = {
+        "seq_no": seq_no,
+        "op_id": op_id,
+        "op_type": op_type,
+        "payload": payload,
+        "status": "replicated",
+        "timestamp": time.time(),
+    }
+
+    try:
+        requests.post(
+            f"{leader_address}/sc/ack/",
+            json={
+                "seq_no": seq_no,
+                "server_id": int(os.environ.get("SERVER_ID", 1)),
+            },
+            timeout=3,
+        )
+    except Exception as e:
+        logger.warning(f"[SC] Failed to ACK seq={seq_no}: {e}")
+        return Response({"error": "failed to ack"}, status=502)
+
+    return Response({"ok": True})
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def sc_ack(request):
+    seq_no = request.data.get("seq_no")
+    server_id = request.data.get("server_id")
+
+    if seq_no is None or server_id is None:
+        return Response({"error": "seq_no and server_id required"}, status=400)
+
+    consistency_manager.receive_ack(int(seq_no), int(server_id))
+    return Response({"ok": True})
 
 
 MAX_RETRY_COUNT = 10
@@ -327,7 +436,40 @@ def download_chunk(request, chunk_id):
 
 class FileUploadView(APIView):
 
+    # If not leader, forward request to leader and return response
     def post(self, request):
+        try:
+            forwarded = _forward_to_leader(request, "/files/upload/", method="POST")
+            if forwarded is not None:
+                return forwarded
+        except Exception as e:
+            logger.exception("Failed to forward upload to leader")
+            return Response(
+                {"error": f"Failed to forward upload to leader: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        serializer = FileUploadRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        leader_address = _get_leader_address_if_not_self()
+        if leader_address:
+            try:
+                resp = requests.post(
+                    f"{leader_address}/files/upload/",
+                    json=request.data,
+                    headers={
+                        "Authorization": request.headers.get("Authorization", ""),
+                        "Content-Type": "application/json",
+                    },
+                    timeout=60,
+                )
+                return Response(resp.json(), status=resp.status_code)
+            except Exception as e:
+                logger.exception("Failed to forward upload to leader")
+                return Response({"error": f"Failed to forward upload to leader: {str(e)}"}, status=502)
+
         serializer = FileUploadRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -346,16 +488,15 @@ class FileUploadView(APIView):
         file_record = None
 
         try:
-            op_id, peer_list, ack_ok = _sc_begin(
-                op_type="upload_file",
-                payload={
-                    "filename": data["filename"],
-                    "size": data["size"],
-                    "chunk_count": len(data["chunks"]),
-                },
-                token_timeout=15,
-                ack_timeout=10,
-            )
+            entry, peer_list, quorum_ok = _sc_replicate_and_commit(
+            op_type="upload_file",
+            payload={
+                "filename": data["filename"],
+                "size": data["size"],
+                "chunk_count": len(data["chunks"]),
+            },
+            ack_timeout=10,
+            )   
 
             with transaction.atomic():
                 file_record = File.objects.create(
@@ -418,10 +559,10 @@ class FileUploadView(APIView):
                 "total_chunks": len(chunk_responses),
                 "chunks": chunk_responses,
                 "sc": {
-                    "token_acquired": True,
-                    "op_id": op_id,
-                    "acks_expected": len(peer_list),
-                    "acks_received_or_timed_out": ack_ok,
+                    "seq_no": entry["seq_no"],
+                    "op_id": entry["op_id"],
+                    "quorum_achieved": quorum_ok,
+                    "replicas_contacted": len(peer_list),
                 },
             }
 
@@ -433,11 +574,9 @@ class FileUploadView(APIView):
         except TimeoutError as e:
             return Response({"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
+            logger.exception("Upload failed")
             return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
-        finally:
-            # only pass token if this request actually acquired it
-            if token_ring_manager.has_token:
-                _sc_pass_token_async(f"upload {data.get('filename', 'unknown')}")
+        
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -605,6 +744,40 @@ def heartbeat_check(request):
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_file(request, file_id):
+
+    # If not leader, forward request to leader and return response
+    try:
+        forwarded = _forward_to_leader(
+            request,
+            f"/files/{file_id}/delete/",
+            method="DELETE",
+        )
+        if forwarded is not None:
+            return forwarded
+    except Exception as e:
+        logger.exception("Failed to forward delete to leader")
+        return Response(
+            {"error": f"Failed to forward delete to leader: {str(e)}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    leader_address = _get_leader_address_if_not_self()
+    if leader_address:
+        try:
+            resp = requests.post(
+                f"{leader_address}/files/upload/",
+                json=request.data,
+                headers={
+                    "Authorization": request.headers.get("Authorization", ""),
+                    "Content-Type": "application/json",
+                },
+                timeout=60,
+            )
+            return Response(resp.json(), status=resp.status_code)
+        except Exception as e:
+            logger.exception("Failed to forward upload to leader")
+            return Response({"error": f"Failed to forward upload to leader: {str(e)}"}, status=502)
+
     try:
         file_obj = File.objects.prefetch_related(
             "chunks__replicas__storage_node"
@@ -615,12 +788,11 @@ def delete_file(request, file_id):
     filename = file_obj.filename
 
     try:
-        op_id, peer_list, ack_ok = _sc_begin(
-            op_type="delete_file",
-            payload={"file_id": str(file_id), "filename": filename},
-            token_timeout=15,
-            ack_timeout=10,
-        )
+        entry, peer_list, quorum_ok = _sc_replicate_and_commit(
+        op_type="delete_file",
+        payload={"file_id": str(file_id), "filename": filename},
+        ack_timeout=10,
+    )
 
         # Collect all (chunk, node) pairs to delete in parallel
         replicas_to_delete = []
@@ -668,10 +840,10 @@ def delete_file(request, file_id):
             "file_id": str(file_id),
             "filename": filename,
             "sc": {
-                "token_acquired": True,
-                "op_id": op_id,
-                "acks_expected": len(peer_list),
-                "acks_received_or_timed_out": ack_ok,
+                "seq_no": entry["seq_no"],
+                "op_id": entry["op_id"],
+                "quorum_achieved": quorum_ok,
+                "replicas_contacted": len(peer_list),
             },
             "chunks": deleted_chunks,
         }, status=status.HTTP_200_OK)
@@ -679,53 +851,6 @@ def delete_file(request, file_id):
     except TimeoutError as e:
         return Response({"error": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     except Exception as e:
+        logger.exception("File deletion failed")
         return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
-    finally:
-        if token_ring_manager.has_token:
-            _sc_pass_token_async(f"delete {file_id}")
 
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def receive_token(request):
-    epoch = request.data.get("epoch")
-    token_ring_manager.receive_token(epoch=int(epoch) if epoch is not None else None)
-    return Response({"ok": True})
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def sc_apply(request):
-    op_id = request.data.get("op_id")
-    op_type = request.data.get("op_type")
-    payload = request.data.get("payload", {})
-
-    if not op_id or not op_type:
-        return Response({"error": "op_id and op_type required"}, status=400)
-
-    logger = __import__("logging").getLogger(__name__)
-    logger.info(
-        f"[SC] Server {token_ring_manager.server_id} received apply "
-        f"op_id={op_id} op_type={op_type} payload={payload}"
-    )
-
-    sender_address = request.data.get("sender_address")
-    if sender_address:
-        try:
-            requests.post(
-                f"{sender_address}/sc/ack/",
-                json={"op_id": op_id, "server_id": int(os.environ.get('SERVER_ID', 1))},
-                timeout=3,
-            )
-        except Exception as e:
-            logger.warning(f"[SC] Failed to send ACK for {op_id}: {e}")
-
-    return Response({"ok": True})
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def sc_ack(request):
-    op_id = request.data.get("op_id")
-    if not op_id:
-        return Response({"error": "op_id required"}, status=400)
-
-    token_ring_manager.receive_ack(op_id)
-    return Response({"ok": True})

@@ -28,15 +28,16 @@ urlpatterns = [
     path('download/<int:file_id>/', views.download_metadata, name='download_metadata'),
     path('download/chunk/<uuid:chunk_id>/', views.download_chunk, name='download_chunk'),
     path('files/<uuid:file_id>/delete/', views.delete_file, name='file-delete'),
-    path('token/receive/', views.receive_token, name='token-receive'),
-    path('sc/apply/', views.sc_apply, name='sc-apply'),
-    path('sc/ack/', views.sc_ack, name='sc-ack'),
+    
     #jp changes
 
     path('nodes/heartbeat/', views.node_heartbeat, name='node-heartbeat'),
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('files/<uuid:file_id>/download/', views.download_file, name='file-download'),
     path('files/', views.list_files, name='list-files'),
+
+    path('sc/replicate/', views.sc_replicate, name='sc-replicate'),
+    path('sc/ack/', views.sc_ack, name='sc-ack'),
 
     # Bully election endpoints
     path('election/', views.election, name='election'),
