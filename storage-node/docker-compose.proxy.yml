@@ -1,0 +1,25 @@
+version: "3.9"
+
+# ============================================================
+# Storage node reverse proxy — for machines running 2 nodes.
+# Routes /node1/ -> port 6000, /node2/ -> port 6001.
+#
+# Run alongside the storage node compose files:
+#   docker compose -p node1 -f docker-compose.yml up --build -d
+#   docker compose -p node2 -f docker-compose.node2.yml up --build -d
+#   docker compose -f docker-compose.proxy.yml up --build -d
+#
+# Then expose via ngrok:
+#   ngrok http 7000
+#
+# Share the ngrok URL with the main server team so they can update
+# STORAGE_NODE_URLS in their docker-compose.yml.
+# ============================================================
+
+services:
+  storage-proxy:
+    build: ./proxy
+    ports:
+      - "7000:7000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -25,8 +25,8 @@ x-main-server-common: &main-server-common
     - DB_HOST=db
     - DB_PORT=5432
     - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-    - STORAGE_NODE_URLS=http://192.168.1.101:6000,http://192.168.1.102:6000,http://192.168.1.103:6000,http://192.168.1.104:6000,http://192.168.1.105:6000  # <-- replace with actual storage node IPs
-    - NGINX_UPDATER_URL=http://nginx:8080
+    - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005  # <-- replace with actual storage node IPs
+    - NGINX_UPDATER_URL=http://nginx:9090
   networks:
     - cps559_network
   depends_on:
@@ -55,8 +55,8 @@ services:
   nginx:
     build: ../nginx
     ports:
-      - "80:80"       # client entry point (static address)
-      - "8080:8080"   # updater API (called by elected leader)
+      - "8080:8080"   # client entry point
+      - "9090:9090"   # updater API (called by elected leader)
     networks:
       - cps559_network
 
@@ -73,8 +73,8 @@ services:
       - SERVER_ID=1
       - OWN_ADDRESS=http://main-server-1:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://192.168.1.101:6000,http://192.168.1.101:6001,http://192.168.1.102:6000,http://192.168.1.102:6001,http://192.168.1.103:6000  # <-- replace with actual storage node IPs
-      - NGINX_UPDATER_URL=http://nginx:8080
+      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005   # <-- replace with actual storage node IPs
+      - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8001:8000"
@@ -92,8 +92,8 @@ services:
       - SERVER_ID=2
       - OWN_ADDRESS=http://main-server-2:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://192.168.1.101:6000,http://192.168.1.101:6001,http://192.168.1.102:6000,http://192.168.1.102:6001,http://192.168.1.103:6000  # <-- replace with actual storage node IPs
-      - NGINX_UPDATER_URL=http://nginx:8080
+      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005   # <-- replace with actual storage node IPs
+      - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8002:8000"
@@ -111,8 +111,8 @@ services:
       - SERVER_ID=3
       - OWN_ADDRESS=http://main-server-3:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://192.168.1.101:6000,http://192.168.1.101:6001,http://192.168.1.102:6000,http://192.168.1.102:6001,http://192.168.1.103:6000  # <-- replace with actual storage node IPs
-      - NGINX_UPDATER_URL=http://nginx:8080
+      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005   # <-- replace with actual storage node IPs
+      - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8003:8000"
@@ -130,8 +130,8 @@ services:
       - SERVER_ID=4
       - OWN_ADDRESS=http://main-server-4:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://192.168.1.101:6000,http://192.168.1.101:6001,http://192.168.1.102:6000,http://192.168.1.102:6001,http://192.168.1.103:6000  # <-- replace with actual storage node IPs
-      - NGINX_UPDATER_URL=http://nginx:8080
+      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005   # <-- replace with actual storage node IPs
+      - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8004:8000"
@@ -149,8 +149,8 @@ services:
       - SERVER_ID=5
       - OWN_ADDRESS=http://main-server-5:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://192.168.1.101:6000,http://192.168.1.101:6001,http://192.168.1.102:6000,http://192.168.1.102:6001,http://192.168.1.103:6000  # <-- replace with actual storage node IPs
-      - NGINX_UPDATER_URL=http://nginx:8080
+      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005  # <-- replace with actual storage node IPs
+      - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
       - "8005:8000"
