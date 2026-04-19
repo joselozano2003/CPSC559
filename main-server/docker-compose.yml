@@ -25,7 +25,7 @@ x-main-server-common: &main-server-common
     - DB_HOST=db
     - DB_PORT=5432
     - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-    - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005  # <-- replace with actual storage node IPs
+    - STORAGE_NODE_URLS=https://unplanted-parasite-matchbook.ngrok-free.dev/node1,https://unplanted-parasite-matchbook.ngrok-free.dev/node2,https://residency-spiritual-casually.ngrok-free.dev/node3,https://residency-spiritual-casually.ngrok-free.dev/node4,https://deluge-unfeeling-deluge.ngrok-free.dev  # <-- replace with actual storage node IPs
     - NGINX_UPDATER_URL=http://nginx:9090
   networks:
     - cps559_network
@@ -73,7 +73,7 @@ services:
       - SERVER_ID=1
       - OWN_ADDRESS=http://main-server-1:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005   # <-- replace with actual storage node IPs
+      - STORAGE_NODE_URLS=https://unplanted-parasite-matchbook.ngrok-free.dev/node1,https://unplanted-parasite-matchbook.ngrok-free.dev/node2,https://residency-spiritual-casually.ngrok-free.dev/node3,https://residency-spiritual-casually.ngrok-free.dev/node4,https://deluge-unfeeling-deluge.ngrok-free.dev   # <-- replace with actual storage node IPs
       - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
@@ -92,7 +92,7 @@ services:
       - SERVER_ID=2
       - OWN_ADDRESS=http://main-server-2:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005   # <-- replace with actual storage node IPs
+      - STORAGE_NODE_URLS=https://unplanted-parasite-matchbook.ngrok-free.dev/node1,https://unplanted-parasite-matchbook.ngrok-free.dev/node2,https://residency-spiritual-casually.ngrok-free.dev/node3,https://residency-spiritual-casually.ngrok-free.dev/node4,https://deluge-unfeeling-deluge.ngrok-free.dev   # <-- replace with actual storage node IPs
       - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
@@ -111,7 +111,7 @@ services:
       - SERVER_ID=3
       - OWN_ADDRESS=http://main-server-3:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005   # <-- replace with actual storage node IPs
+      - STORAGE_NODE_URLS=https://unplanted-parasite-matchbook.ngrok-free.dev/node1,https://unplanted-parasite-matchbook.ngrok-free.dev/node2,https://residency-spiritual-casually.ngrok-free.dev/node3,https://residency-spiritual-casually.ngrok-free.dev/node4,https://deluge-unfeeling-deluge.ngrok-free.dev   # <-- replace with actual storage node IPs
       - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
@@ -130,7 +130,7 @@ services:
       - SERVER_ID=4
       - OWN_ADDRESS=http://main-server-4:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005   # <-- replace with actual storage node IPs
+      - STORAGE_NODE_URLS=https://unplanted-parasite-matchbook.ngrok-free.dev/node1,https://unplanted-parasite-matchbook.ngrok-free.dev/node2,https://residency-spiritual-casually.ngrok-free.dev/node3,https://residency-spiritual-casually.ngrok-free.dev/node4,https://deluge-unfeeling-deluge.ngrok-free.dev   # <-- replace with actual storage node IPs
       - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
@@ -149,7 +149,7 @@ services:
       - SERVER_ID=5
       - OWN_ADDRESS=http://main-server-5:8000
       - PEER_SERVERS=1:http://main-server-1:8000,2:http://main-server-2:8000,3:http://main-server-3:8000,4:http://main-server-4:8000,5:http://main-server-5:8000
-      - STORAGE_NODE_URLS=http://75.159.166.209:6000,http://75.159.166.209:6001,http://68.147.45.83:6003,http://68.147.45.83:6004,http://24.66.149.8:6005  # <-- replace with actual storage node IPs
+      - STORAGE_NODE_URLS=https://unplanted-parasite-matchbook.ngrok-free.dev/node1,https://unplanted-parasite-matchbook.ngrok-free.dev/node2,https://residency-spiritual-casually.ngrok-free.dev/node3,https://residency-spiritual-casually.ngrok-free.dev/node4,https://deluge-unfeeling-deluge.ngrok-free.dev  # <-- replace with actual storage node IPs
       - NGINX_UPDATER_URL=http://nginx:9090
       - INTERNAL_SECRET=cps559-internal-key
     ports:
