@@ -30,7 +30,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_TIMEOUT = 30  # seconds
-REPLICATION_FACTOR = 5
+REPLICATION_FACTOR = 3
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "cps559-internal-key")
 
 def get_active_nodes():
