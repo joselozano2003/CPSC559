@@ -21,7 +21,7 @@ def require_jwt_or_internal(f):
         from .routes import _main_server_url
         verify_endpoint = f"{_main_server_url}/api/token/verify/"
         try:
-            response = requests.post(verify_endpoint, json={"token": token}, timeout=5)
+            response = requests.post(verify_endpoint, json={"token": token}, timeout=5, headers={"ngrok-skip-browser-warning": "true"})
             if response.status_code == 200:
                 return f(*args, **kwargs)
             else:
