@@ -12,6 +12,10 @@ A fault-tolerant distributed file storage system with chunked uploads, multi-nod
 
 ---
 
+## note
+There is a branch called "single-machine-deployment" in this repository that contains the code needed to run using one single machine.
+Instruction for setting up that branch is located in SYSTEM.md within that branch.
+
 ## Quick Start
 
 Boot everything in order:
